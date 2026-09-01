@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserProfile, ConnectionState, UserRole, AccountStatus, UserPermissions, ActivityLog, SystemAccessConfig } from '../types/user';
 import { StorageService } from '../services/storage';
 import { SupabaseService } from '../services/supabaseService';
+import { generateUUID } from '../utils/formatters';
 import { useAuth } from './AuthContext';
 
 interface UserContextType {
@@ -17,7 +18,7 @@ interface UserContextType {
   disconnectUser: (targetUserId: string) => void;
   grantPushAccess: (targetUsername: string) => void;
   // Admin Operations
-  adminCreateUser: (userData: { username: string; fullName: string; email: string; role: UserRole; isVerified: boolean }) => Promise<boolean>;
+  adminCreateUser: (userData: { username: string; fullName: string; email: string; role: UserRole; isVerified: boolean; password?: string }) => Promise<boolean>;
   adminUpdateUserRole: (userId: string, newRole: UserRole) => void;
   adminToggleUserStatus: (userId: string, newStatus: AccountStatus, reason?: string) => void;
   adminToggleVerified: (userId: string) => void;
@@ -154,6 +155,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     saveAndSync(updated);
+    SupabaseService.sendConnectionRequest(currentUser.id, targetUserId);
+
     logAdminAction(
       'ACCESS_GRANTED',
       `Sent connection request to @${target.username}`,
@@ -203,6 +206,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     saveAndSync(updated);
+    SupabaseService.acceptConnectionRequest(currentUser.id, targetUserId);
+
     logAdminAction(
       'ACCESS_GRANTED',
       `Approved connection and Push permissions with @${target.username}`,
@@ -228,6 +233,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     saveAndSync(updated);
+    SupabaseService.deleteConnection(currentUser.id, targetUserId);
   };
 
   const disconnectUser = (targetUserId: string) => {
@@ -242,13 +248,13 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // --- ADMIN OPERATIONS ---
 
-  const adminCreateUser = async (userData: { username: string; fullName: string; email: string; role: UserRole; isVerified: boolean }): Promise<boolean> => {
+  const adminCreateUser = async (userData: { username: string; fullName: string; email: string; role: UserRole; isVerified: boolean; password?: string }): Promise<boolean> => {
     const cleanUsername = userData.username.trim().toLowerCase().replace(/\s+/g, '_');
     const existing = users.find(u => u.username.toLowerCase() === cleanUsername || u.email.toLowerCase() === userData.email.toLowerCase());
     if (existing) return false;
 
     const newUser: UserProfile = {
-      id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: generateUUID(),
       username: cleanUsername,
       fullName: userData.fullName.trim() || cleanUsername,
       email: userData.email.trim().toLowerCase(),
@@ -258,6 +264,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       totalSignalsCount: 0,
       totalJournalsCount: 0,
       isVerified: userData.isVerified,
+      password: userData.password || 'FatFxTrader123!',
+      passwordHash: userData.password || 'FatFxTrader123!',
       status: 'ACTIVE',
       permissions: {
         canPublishSignals: true,

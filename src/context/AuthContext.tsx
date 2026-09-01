@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserProfile, UserRole } from '../types/user';
 import { StorageService } from '../services/storage';
 import { SupabaseService } from '../services/supabaseService';
+import { generateUUID } from '../utils/formatters';
 
 interface AuthContextType {
   currentUser: UserProfile | null;
@@ -112,7 +113,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const assignedRole = role || (users.length === 0 ? 'ADMIN' : 'USER');
 
     const newUser: UserProfile = {
-      id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: generateUUID(),
       username: cleanUsername,
       fullName: fullName.trim() || cleanUsername,
       email: email.trim().toLowerCase(),

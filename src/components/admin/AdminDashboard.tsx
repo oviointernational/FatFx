@@ -58,6 +58,7 @@ export const AdminDashboard: React.FC = () => {
   const [newUsername, setNewUsername] = useState('');
   const [newFullName, setNewFullName] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('FatFxTrader123!');
   const [newRole, setNewRole] = useState<UserRole>('USER');
   const [newVerified, setNewVerified] = useState(false);
   const [newUserError, setNewUserError] = useState('');
@@ -168,6 +169,7 @@ export const AdminDashboard: React.FC = () => {
       username: newUsername,
       fullName: newFullName,
       email: newEmail,
+      password: newPassword || 'FatFxTrader123!',
       role: newRole,
       isVerified: newVerified,
     });
@@ -176,6 +178,7 @@ export const AdminDashboard: React.FC = () => {
       setNewUsername('');
       setNewFullName('');
       setNewEmail('');
+      setNewPassword('FatFxTrader123!');
       setNewUserError('');
     } else {
       setNewUserError('Username or email already exists.');
@@ -1046,6 +1049,17 @@ export const AdminDashboard: React.FC = () => {
                   value={newEmail}
                   onChange={e => setNewEmail(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Initial Password *</label>
+                <input
+                  type="text"
+                  placeholder="Initial account password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500 font-mono text-xs"
                 />
               </div>
 

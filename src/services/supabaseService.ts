@@ -21,6 +21,35 @@ export const SupabaseService = {
 
       if (error || !data) return null;
 
+      // Fetch connections to populate network graph
+      const { data: connData } = await supabase.from('connections').select('*');
+      const connMap: Record<string, Record<string, any>> = {};
+      if (connData) {
+        connData.forEach(c => {
+          if (!connMap[c.requester_id]) connMap[c.requester_id] = {};
+          if (!connMap[c.target_id]) connMap[c.target_id] = {};
+
+          const targetProfile = data.find(p => p.id === c.target_id);
+          const reqProfile = data.find(p => p.id === c.requester_id);
+
+          connMap[c.requester_id][c.target_id] = {
+            targetUserId: c.target_id,
+            targetUsername: targetProfile?.username || 'trader',
+            state: c.state === 'CONNECTED' ? 'CONNECTED' : 'PENDING_SENT',
+            hasPushAccess: c.has_push_access,
+            connectedAt: c.created_at
+          };
+
+          connMap[c.target_id][c.requester_id] = {
+            targetUserId: c.requester_id,
+            targetUsername: reqProfile?.username || 'trader',
+            state: c.state === 'CONNECTED' ? 'CONNECTED' : 'PENDING_RECEIVED',
+            hasPushAccess: c.has_push_access,
+            connectedAt: c.created_at
+          };
+        });
+      }
+
       return data.map(p => ({
         id: p.id,
         username: p.username,
@@ -45,10 +74,51 @@ export const SupabaseService = {
           canModerateSignals: p.user_permissions.can_moderate_signals,
           maxActiveSignals: p.user_permissions.max_active_signals,
         } : undefined,
-        connections: {}
+        connections: connMap[p.id] || {}
       }));
     } catch {
       return null;
+    }
+  },
+
+  sendConnectionRequest: async (requesterId: string, targetId: string): Promise<boolean> => {
+    if (!isSupabaseConfigured) return false;
+    try {
+      const { error } = await supabase.from('connections').upsert({
+        requester_id: requesterId,
+        target_id: targetId,
+        state: 'PENDING',
+        has_push_access: false,
+      });
+      return !error;
+    } catch {
+      return false;
+    }
+  },
+
+  acceptConnectionRequest: async (userId1: string, userId2: string): Promise<boolean> => {
+    if (!isSupabaseConfigured) return false;
+    try {
+      const { error } = await supabase
+        .from('connections')
+        .update({ state: 'CONNECTED', has_push_access: true })
+        .or(`and(requester_id.eq.${userId1},target_id.eq.${userId2}),and(requester_id.eq.${userId2},target_id.eq.${userId1})`);
+      return !error;
+    } catch {
+      return false;
+    }
+  },
+
+  deleteConnection: async (userId1: string, userId2: string): Promise<boolean> => {
+    if (!isSupabaseConfigured) return false;
+    try {
+      const { error } = await supabase
+        .from('connections')
+        .delete()
+        .or(`and(requester_id.eq.${userId1},target_id.eq.${userId2}),and(requester_id.eq.${userId2},target_id.eq.${userId1})`);
+      return !error;
+    } catch {
+      return false;
     }
   },
 
