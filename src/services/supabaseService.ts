@@ -35,6 +35,7 @@ export const SupabaseService = {
         isVerified: p.is_verified,
         status: p.status,
         banReason: p.ban_reason,
+        passwordHash: p.password_hash,
         joinedDate: p.created_at ? p.created_at.split('T')[0] : '2026-01-01',
         lastActiveDate: p.updated_at ? p.updated_at.split('T')[0] : undefined,
         permissions: p.user_permissions ? {
@@ -65,6 +66,7 @@ export const SupabaseService = {
         is_verified: profile.isVerified ?? false,
         status: profile.status,
         ban_reason: profile.banReason,
+        password_hash: profile.passwordHash || profile.password,
       });
       if (profileError) return false;
 

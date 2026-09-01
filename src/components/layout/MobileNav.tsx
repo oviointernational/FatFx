@@ -19,9 +19,9 @@ export const MobileNav: React.FC<MobileNavProps> = ({ activeView, onViewChange }
   ).length;
 
   const rawItems = [
+    { id: 'feeds' as ActiveView, label: 'Feeds', icon: Rss, badge: null },
     { id: 'journal' as ActiveView, label: 'Journal', icon: BookOpen, badge: null },
     { id: 'signals' as ActiveView, label: 'Signals', icon: Radio, badge: null },
-    { id: 'feeds' as ActiveView, label: 'Feeds', icon: Rss, badge: null },
     { id: 'users' as ActiveView, label: 'Users', icon: Users, badge: chainCount > 0 ? chainCount : null },
     ...(isAdmin ? [{ id: 'admin' as ActiveView, label: 'Admin', icon: Shield, badge: null }] : []),
   ];

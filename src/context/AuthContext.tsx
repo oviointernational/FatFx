@@ -11,8 +11,8 @@ interface AuthContextType {
   isProTrader: boolean;
   canPublishSignals: boolean;
   canPushJournals: boolean;
-  login: (usernameOrEmail: string) => Promise<boolean>;
-  register: (username: string, fullName: string, email: string, role?: UserRole) => Promise<boolean>;
+  login: (usernameOrEmail: string, password?: string) => Promise<boolean>;
+  register: (username: string, fullName: string, email: string, password?: string, role?: UserRole) => Promise<boolean>;
   logout: () => void;
   switchUser: (userId: string) => void;
   updateCurrentUser: (updates: Partial<UserProfile>) => void;
@@ -62,7 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const login = async (usernameOrEmail: string): Promise<boolean> => {
+  const login = async (usernameOrEmail: string, password?: string): Promise<boolean> => {
     const query = usernameOrEmail.trim().toLowerCase();
     let currentUsersList = users;
 
@@ -77,12 +77,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const found = currentUsersList.find(u => u.username.toLowerCase() === query || u.email.toLowerCase() === query);
-    if (found) {
-      setCurrentUserId(found.id);
-      StorageService.setCurrentUserId(found.id);
-      return true;
+    if (!found) {
+      return false;
     }
-    return false;
+
+    // Verify password if user has password set
+    if (found.password || found.passwordHash) {
+      const expectedPassword = found.password || found.passwordHash;
+      if (password && password === expectedPassword) {
+        setCurrentUserId(found.id);
+        StorageService.setCurrentUserId(found.id);
+        return true;
+      }
+      return false;
+    }
+
+    // Allow login if no password was set on legacy profile
+    setCurrentUserId(found.id);
+    StorageService.setCurrentUserId(found.id);
+    return true;
   };
 
   const logout = () => {
@@ -90,7 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     StorageService.setCurrentUserId(null);
   };
 
-  const register = async (username: string, fullName: string, email: string, role?: UserRole): Promise<boolean> => {
+  const register = async (username: string, fullName: string, email: string, password?: string, role?: UserRole): Promise<boolean> => {
     const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '_');
     const existing = users.find(u => u.username.toLowerCase() === cleanUsername || u.email.toLowerCase() === email.toLowerCase());
     if (existing) return false;
@@ -110,6 +123,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       totalJournalsCount: 0,
       isVerified: assignedRole === 'PRO_TRADER' || assignedRole === 'ADMIN',
       status: 'ACTIVE',
+      password: password || undefined,
+      passwordHash: password || undefined,
       permissions: {
         canPublishSignals: true,
         canPushJournals: true,

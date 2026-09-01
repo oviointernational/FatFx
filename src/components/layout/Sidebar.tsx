@@ -38,9 +38,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const rawMenuItems: MenuItem[] = [
-    { id: 'journal', label: 'Journal', icon: BookOpen, badge: null },
-    { id: 'signals', label: 'Signal', icon: Radio, badge: null },
     { id: 'feeds', label: 'Feeds', icon: Rss, badge: null },
+    { id: 'journal', label: 'Journal', icon: BookOpen, badge: null },
+    { id: 'signals', label: 'Signals', icon: Radio, badge: null },
     { id: 'users', label: 'Users', icon: Users, badge: chainCount > 0 ? chainCount : null },
     ...(isAdmin ? [{ id: 'admin' as ActiveView, label: 'Admin', icon: Shield, badge: null }] : []),
   ];

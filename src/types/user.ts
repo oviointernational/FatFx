@@ -37,6 +37,8 @@ export interface UserProfile {
   permissions?: UserPermissions;
   joinedDate: string;
   lastActiveDate?: string;
+  password?: string;
+  passwordHash?: string;
   connections: Record<string, UserConnection>;
   hasPushedWithCurrentUser?: boolean;
 }

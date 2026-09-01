@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     is_verified BOOLEAN DEFAULT FALSE NOT NULL,
     status account_status DEFAULT 'ACTIVE' NOT NULL,
     ban_reason TEXT,
+    password_hash TEXT,
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, User, UserPlus, LogIn, LogOut, Shield, Key } from 'lucide-react';
+import { X, User, UserPlus, LogIn, LogOut, Shield, Key, Eye, EyeOff, Lock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import clsx from 'clsx';
 
@@ -13,39 +13,88 @@ type Tab = 'profile' | 'login' | 'register' | 'switch';
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const { currentUser, users, login, register, logout, switchUser, isAdmin } = useAuth();
   const [tab, setTab] = useState<Tab>(currentUser ? 'profile' : 'login');
+
+  // Login form states
   const [loginInput, setLoginInput] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
+
+  // Registration form states
   const [regUsername, setRegUsername] = useState('');
   const [regFullName, setRegFullName] = useState('');
   const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
   const [regError, setRegError] = useState('');
   const [regSuccess, setRegSuccess] = useState(false);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
   const handleLogin = async () => {
-    if (!loginInput.trim()) { setLoginError('Enter username or email'); return; }
+    if (!loginInput.trim()) {
+      setLoginError('Please enter your username or email');
+      return;
+    }
+    if (!loginPassword) {
+      setLoginError('Please enter your password');
+      return;
+    }
+
     setIsSubmitting(true);
-    const ok = await login(loginInput.trim());
+    const ok = await login(loginInput.trim(), loginPassword);
     setIsSubmitting(false);
+
     if (ok) {
       onClose();
       setLoginInput('');
+      setLoginPassword('');
       setLoginError('');
     } else {
-      setLoginError('User not found. Check username or create a new account.');
+      setLoginError('Invalid credentials. Please check your username/email and password.');
     }
   };
 
   const handleRegister = async () => {
-    if (!regUsername.trim() || !regEmail.trim()) { setRegError('Username and email required'); return; }
+    if (!regUsername.trim()) {
+      setRegError('Username is required');
+      return;
+    }
+    if (!regEmail.trim()) {
+      setRegError('Email address is required');
+      return;
+    }
+    if (!regPassword) {
+      setRegError('Password is required');
+      return;
+    }
+    if (regPassword.length < 6) {
+      setRegError('Password must be at least 6 characters');
+      return;
+    }
+    if (regPassword !== regConfirmPassword) {
+      setRegError('Passwords do not match');
+      return;
+    }
+
     setIsSubmitting(true);
-    const ok = await register(regUsername, regFullName, regEmail);
+    const ok = await register(regUsername, regFullName, regEmail, regPassword);
     setIsSubmitting(false);
+
     if (ok) {
       setRegSuccess(true);
-      setTimeout(() => { onClose(); setRegSuccess(false); }, 1500);
+      setTimeout(() => {
+        onClose();
+        setRegSuccess(false);
+        setRegUsername('');
+        setRegFullName('');
+        setRegEmail('');
+        setRegPassword('');
+        setRegConfirmPassword('');
+      }, 1500);
     } else {
       setRegError('Username or email already exists.');
     }
@@ -70,7 +119,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-end">
       <div className="absolute inset-0 bg-black/20 backdrop-blur-xs" onClick={onClose} />
-      <div className="relative mt-10 mr-2 w-84 bg-white rounded-2xl shadow-lg border border-fatfx-border overflow-hidden">
+      <div className="relative mt-10 mr-2 w-88 max-w-[calc(100vw-1rem)] bg-white rounded-2xl shadow-lg border border-fatfx-border overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-fatfx-border bg-fatfx-surface-subtle">
           <div className="flex items-center gap-2">
@@ -118,7 +167,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           ))}
         </div>
 
-        <div className="p-4">
+        <div className="p-4 max-h-[80vh] overflow-y-auto">
           {/* Profile Tab */}
           {tab === 'profile' && currentUser && (
             <div className="space-y-3">
@@ -159,17 +208,51 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           {/* Login Tab */}
           {tab === 'login' && (
             <div className="space-y-3">
-              <p className="text-xs text-slate-500">Enter your username or email to sign in.</p>
-              <input
-                type="text"
-                placeholder="Username or email"
-                value={loginInput}
-                onChange={e => { setLoginInput(e.target.value); setLoginError(''); }}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
-                autoFocus
-              />
+              <p className="text-xs text-slate-500">Sign in with your credentials.</p>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                  Username or Email
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Enter username or email"
+                    value={loginInput}
+                    onChange={e => { setLoginInput(e.target.value); setLoginError(''); }}
+                    className="w-full pl-8.5 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type={showLoginPassword ? 'text' : 'password'}
+                    placeholder="Enter your password"
+                    value={loginPassword}
+                    onChange={e => { setLoginPassword(e.target.value); setLoginError(''); }}
+                    onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                    className="w-full pl-8.5 pr-9 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                  >
+                    {showLoginPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
               {loginError && <p className="text-xs text-red-500 font-medium">{loginError}</p>}
+
               <button
                 onClick={handleLogin}
                 disabled={isSubmitting}
@@ -178,6 +261,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 <LogIn className="w-3.5 h-3.5" />
                 {isSubmitting ? 'Signing In...' : 'Sign In'}
               </button>
+
+              <div className="text-center pt-2">
+                <span className="text-xs text-slate-500">Don't have an account? </span>
+                <button
+                  type="button"
+                  onClick={() => setTab('register')}
+                  className="text-xs font-bold text-fatfx-teal-600 hover:underline"
+                >
+                  Create one now
+                </button>
+              </div>
             </div>
           )}
 
@@ -194,28 +288,83 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 </div>
               ) : (
                 <>
-                  <input
-                    type="text"
-                    placeholder="Username *"
-                    value={regUsername}
-                    onChange={e => { setRegUsername(e.target.value); setRegError(''); }}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Full Name (optional)"
-                    value={regFullName}
-                    onChange={e => setRegFullName(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
-                  />
-                  <input
-                    type="email"
-                    placeholder="Email *"
-                    value={regEmail}
-                    onChange={e => { setRegEmail(e.target.value); setRegError(''); }}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
-                  />
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                      Username *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Choose a username"
+                      value={regUsername}
+                      onChange={e => { setRegUsername(e.target.value); setRegError(''); }}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                      Full Name (optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Your display name"
+                      value={regFullName}
+                      onChange={e => setRegFullName(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                      Email Address *
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="trader@domain.com"
+                      value={regEmail}
+                      onChange={e => { setRegEmail(e.target.value); setRegError(''); }}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                      Password *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showRegPassword ? 'text' : 'password'}
+                        placeholder="Min 6 characters"
+                        value={regPassword}
+                        onChange={e => { setRegPassword(e.target.value); setRegError(''); }}
+                        className="w-full px-3 pr-9 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegPassword(!showRegPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                      >
+                        {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                      Confirm Password *
+                    </label>
+                    <input
+                      type={showRegPassword ? 'text' : 'password'}
+                      placeholder="Repeat your password"
+                      value={regConfirmPassword}
+                      onChange={e => { setRegConfirmPassword(e.target.value); setRegError(''); }}
+                      onKeyDown={e => e.key === 'Enter' && handleRegister()}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                    />
+                  </div>
+
                   {regError && <p className="text-xs text-red-500 font-medium">{regError}</p>}
+
                   <button
                     onClick={handleRegister}
                     disabled={isSubmitting}
@@ -223,6 +372,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                   >
                     {isSubmitting ? 'Creating Account...' : 'Create Account'}
                   </button>
+
+                  <div className="text-center pt-1">
+                    <span className="text-xs text-slate-500">Already registered? </span>
+                    <button
+                      type="button"
+                      onClick={() => setTab('login')}
+                      className="text-xs font-bold text-fatfx-teal-600 hover:underline"
+                    >
+                      Sign In
+                    </button>
+                  </div>
                 </>
               )}
             </div>
