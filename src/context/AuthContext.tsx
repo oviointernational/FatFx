@@ -4,6 +4,11 @@ import { StorageService } from '../services/storage';
 import { SupabaseService } from '../services/supabaseService';
 import { generateUUID } from '../utils/formatters';
 
+interface AuthResult {
+  success: boolean;
+  error?: string;
+}
+
 interface AuthContextType {
   currentUser: UserProfile | null;
   users: UserProfile[];
@@ -12,33 +17,47 @@ interface AuthContextType {
   isProTrader: boolean;
   canPublishSignals: boolean;
   canPushJournals: boolean;
-  login: (usernameOrEmail: string, password?: string) => Promise<boolean>;
-  register: (username: string, fullName: string, email: string, password?: string, role?: UserRole) => Promise<boolean>;
+  login: (usernameOrEmail: string, password?: string) => Promise<AuthResult>;
+  register: (username: string, fullName: string, email: string, password?: string, role?: UserRole) => Promise<AuthResult>;
   logout: () => void;
   switchUser: (userId: string) => void;
-  updateCurrentUser: (updates: Partial<UserProfile>) => void;
+  updateCurrentUser: (updates: Partial<UserProfile>) => Promise<boolean>;
   refreshUsers: () => Promise<void>;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [users, setUsers] = useState<UserProfile[]>(() => StorageService.getUsers());
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => StorageService.getCurrentUserId());
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const refreshUsers = async () => {
     const remote = await SupabaseService.getProfiles();
-    if (remote && remote.length > 0) {
+    if (remote) {
       setUsers(remote);
-      StorageService.saveUsers(remote);
     }
   };
 
   useEffect(() => {
-    refreshUsers();
+    let isMounted = true;
+    (async () => {
+      setIsLoading(true);
+      const remote = await SupabaseService.getProfiles();
+      if (isMounted && remote) {
+        setUsers(remote);
+      }
+      if (isMounted) {
+        setIsLoading(false);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // Find active authenticated user
+  // Find active authenticated user directly from the live database profiles
   const currentUser = users.find(u => u.id === currentUserId) || null;
 
   const isAdmin = currentUser?.role === 'ADMIN';
@@ -53,50 +72,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (found) {
       setCurrentUserId(userId);
       StorageService.setCurrentUserId(userId);
-      StorageService.logActivity(
-        found.username,
-        'ACCESS_GRANTED',
-        `User session switched to @${found.username}`,
-        found.username,
-        'INFO'
-      );
+      SupabaseService.createActivityLog({
+        actorUsername: found.username,
+        action: 'ACCESS_GRANTED',
+        target: found.username,
+        details: `User session switched to @${found.username}`,
+        severity: 'INFO'
+      });
     }
   };
 
-  const login = async (usernameOrEmail: string, password?: string): Promise<boolean> => {
+  const login = async (usernameOrEmail: string, password?: string): Promise<AuthResult> => {
     const query = usernameOrEmail.trim().toLowerCase();
-    let currentUsersList = users;
 
-    // Refresh if empty
-    if (currentUsersList.length === 0) {
-      const remote = await SupabaseService.getProfiles();
-      if (remote && remote.length > 0) {
-        currentUsersList = remote;
-        setUsers(remote);
-        StorageService.saveUsers(remote);
-      }
+    // Fetch latest profiles directly from Supabase
+    const liveProfiles = await SupabaseService.getProfiles();
+    const currentList = liveProfiles || users;
+    if (liveProfiles) {
+      setUsers(liveProfiles);
     }
 
-    const found = currentUsersList.find(u => u.username.toLowerCase() === query || u.email.toLowerCase() === query);
+    const found = currentList.find(u => u.username.toLowerCase() === query || u.email.toLowerCase() === query);
     if (!found) {
-      return false;
+      return { success: false, error: 'User account not found in database. Please register.' };
     }
 
-    // Verify password if user has password set
-    if (found.password || found.passwordHash) {
-      const expectedPassword = found.password || found.passwordHash;
-      if (password && password === expectedPassword) {
+    // Verify password against Supabase
+    if (found.passwordHash || found.password) {
+      const expected = found.passwordHash || found.password;
+      if (password && password === expected) {
         setCurrentUserId(found.id);
         StorageService.setCurrentUserId(found.id);
-        return true;
+        return { success: true };
       }
-      return false;
+      return { success: false, error: 'Invalid password. Please check your credentials.' };
     }
 
-    // Allow login if no password was set on legacy profile
+    // Direct login
     setCurrentUserId(found.id);
     StorageService.setCurrentUserId(found.id);
-    return true;
+    return { success: true };
   };
 
   const logout = () => {
@@ -104,19 +119,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     StorageService.setCurrentUserId(null);
   };
 
-  const register = async (username: string, fullName: string, email: string, password?: string, role?: UserRole): Promise<boolean> => {
+  const register = async (username: string, fullName: string, email: string, password?: string, role?: UserRole): Promise<AuthResult> => {
     const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '_');
-    const existing = users.find(u => u.username.toLowerCase() === cleanUsername || u.email.toLowerCase() === email.toLowerCase());
-    if (existing) return false;
+    const cleanEmail = email.trim().toLowerCase();
 
-    // If first user, make ADMIN, otherwise default role
-    const assignedRole = role || (users.length === 0 ? 'ADMIN' : 'USER');
+    // Verify uniqueness against live Supabase
+    const liveProfiles = await SupabaseService.getProfiles();
+    const currentList = liveProfiles || users;
+
+    const existing = currentList.find(u => u.username.toLowerCase() === cleanUsername || u.email.toLowerCase() === cleanEmail);
+    if (existing) {
+      return { success: false, error: 'Username or email already registered in Supabase database.' };
+    }
+
+    // First registered account in database becomes ADMIN
+    const assignedRole = role || (currentList.length === 0 ? 'ADMIN' : 'USER');
 
     const newUser: UserProfile = {
       id: generateUUID(),
       username: cleanUsername,
       fullName: fullName.trim() || cleanUsername,
-      email: email.trim().toLowerCase(),
+      email: cleanEmail,
       role: assignedRole,
       bio: 'Forex trader on FatFx.',
       avatarUrl: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80`,
@@ -137,36 +160,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       connections: {}
     };
 
-    // Save remote & local
-    await SupabaseService.createProfile(newUser);
-    const updatedUsers = [newUser, ...users];
-    setUsers(updatedUsers);
-    StorageService.saveUsers(updatedUsers);
+    // DIRECT SUPABASE INSERT
+    const createRes = await SupabaseService.createProfile(newUser);
+    if (!createRes) {
+      return {
+        success: false,
+        error: 'Failed to write to Supabase database. Ensure supabase_schema.sql has been executed in Supabase SQL Editor.'
+      };
+    }
 
-    StorageService.logActivity(
-      cleanUsername,
-      'USER_CREATED',
-      `New trader account @${cleanUsername} registered (${assignedRole}).`,
-      cleanUsername,
-      'INFO'
-    );
+    // Re-fetch clean list from Supabase
+    await refreshUsers();
+
+    SupabaseService.createActivityLog({
+      actorUsername: cleanUsername,
+      action: 'USER_CREATED',
+      target: cleanUsername,
+      details: `New trader account @${cleanUsername} registered (${assignedRole}) in Supabase database.`,
+      severity: 'INFO'
+    });
 
     setCurrentUserId(newUser.id);
     StorageService.setCurrentUserId(newUser.id);
-    return true;
+    return { success: true };
   };
 
-  const updateCurrentUser = (updates: Partial<UserProfile>) => {
-    if (!currentUser) return;
-    const updatedUsers = users.map(u => {
-      if (u.id === currentUser.id) {
-        return { ...u, ...updates };
-      }
-      return u;
-    });
-    setUsers(updatedUsers);
-    StorageService.saveUsers(updatedUsers);
-    SupabaseService.updateProfile(currentUser.id, updates);
+  const updateCurrentUser = async (updates: Partial<UserProfile>): Promise<boolean> => {
+    if (!currentUser) return false;
+    const ok = await SupabaseService.updateProfile(currentUser.id, updates);
+    if (ok) {
+      await refreshUsers();
+    }
+    return ok;
   };
 
   return (
@@ -184,7 +209,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         switchUser,
         updateCurrentUser,
-        refreshUsers
+        refreshUsers,
+        isLoading
       }}
     >
       {children}

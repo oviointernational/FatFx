@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useUsers } from '../../context/UserContext';
 import { useSignals } from '../../context/SignalContext';
 import { useJournal } from '../../context/JournalContext';
-import { StorageService } from '../../services/storage';
+
 import { formatSignedCurrency, formatPercent } from '../../utils/formatters';
 import { UserProfile, UserRole, AccountStatus, UserPermissions } from '../../types/user';
 import { Signal, SignalType, SignalStatus } from '../../types/signal';
@@ -974,7 +974,6 @@ export const AdminDashboard: React.FC = () => {
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
-                      StorageService.resetToDefault();
                       window.location.reload();
                     }}
                     className="px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors"

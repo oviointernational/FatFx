@@ -1,9 +1,22 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserProfile, ConnectionState, UserRole, AccountStatus, UserPermissions, ActivityLog, SystemAccessConfig } from '../types/user';
-import { StorageService } from '../services/storage';
 import { SupabaseService } from '../services/supabaseService';
+import { StorageService } from '../services/storage';
 import { generateUUID } from '../utils/formatters';
 import { useAuth } from './AuthContext';
+
+const DEFAULT_SYSTEM_CONFIG: SystemAccessConfig = {
+  isJournalEnabled: true,
+  isSignalsEnabled: true,
+  isFeedsEnabled: true,
+  isUsersEnabled: true,
+  requireSignalApproval: false,
+  allowPublicRegistration: true,
+  allowPushSharing: true,
+  maintenanceMode: false,
+  defaultMonthlyCapital: 10000,
+  allowProTraderSignalsOnly: false,
+};
 
 interface UserContextType {
   users: UserProfile[];
@@ -17,7 +30,6 @@ interface UserContextType {
   rejectConnectionRequest: (targetUserId: string) => void;
   disconnectUser: (targetUserId: string) => void;
   grantPushAccess: (targetUsername: string) => void;
-  // Admin Operations
   adminCreateUser: (userData: { username: string; fullName: string; email: string; role: UserRole; isVerified: boolean; password?: string }) => Promise<boolean>;
   adminUpdateUserRole: (userId: string, newRole: UserRole) => void;
   adminToggleUserStatus: (userId: string, newStatus: AccountStatus, reason?: string) => void;
@@ -32,212 +44,106 @@ interface UserContextType {
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { currentUser, isAdmin } = useAuth();
-  const [users, setUsers] = useState<UserProfile[]>(() => StorageService.getUsers());
-  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => StorageService.getActivityLogs());
-  const [systemConfig, setSystemConfig] = useState<SystemAccessConfig>(() => StorageService.getSystemConfig());
+  const { currentUser, users: authUsers, isAdmin, refreshUsers } = useAuth();
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [systemConfig, setSystemConfig] = useState<SystemAccessConfig>(DEFAULT_SYSTEM_CONFIG);
+
+  // Users come from AuthContext (already fetched from Supabase)
+  const users = authUsers;
 
   const refreshUserData = async () => {
-    // 1. Fetch profiles
-    const remoteProfiles = await SupabaseService.getProfiles();
-    if (remoteProfiles) {
-      setUsers(remoteProfiles);
-      StorageService.saveUsers(remoteProfiles);
-    }
+    await refreshUsers();
 
-    // 2. Fetch config
     const remoteConfig = await SupabaseService.getSystemConfig();
     if (remoteConfig) {
       setSystemConfig(remoteConfig);
-      StorageService.saveSystemConfig(remoteConfig);
     }
 
-    // 3. Fetch activity logs
     if (isAdmin) {
       const remoteLogs = await SupabaseService.getActivityLogs();
       if (remoteLogs) {
         setActivityLogs(remoteLogs);
-        StorageService.saveActivityLogs(remoteLogs);
       }
     }
   };
 
   useEffect(() => {
-    refreshUserData();
-  }, [currentUser?.id]);
+    let mounted = true;
+    (async () => {
+      const remoteConfig = await SupabaseService.getSystemConfig();
+      if (mounted && remoteConfig) setSystemConfig(remoteConfig);
 
-  // Check if a menu is globally enabled or accessible by user
+      if (mounted && isAdmin) {
+        const remoteLogs = await SupabaseService.getActivityLogs();
+        if (mounted && remoteLogs) setActivityLogs(remoteLogs);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [currentUser?.id, isAdmin]);
+
   const isMenuAllowed = (menuId: 'journal' | 'signals' | 'feeds' | 'users' | 'admin'): boolean => {
     if (menuId === 'admin') return isAdmin;
-    if (isAdmin) return true; // Admins always have access for management
-
+    if (isAdmin) return true;
     switch (menuId) {
-      case 'journal':
-        return systemConfig.isJournalEnabled;
-      case 'signals':
-        return systemConfig.isSignalsEnabled;
-      case 'feeds':
-        return systemConfig.isFeedsEnabled;
-      case 'users':
-        return systemConfig.isUsersEnabled;
-      default:
-        return true;
+      case 'journal': return systemConfig.isJournalEnabled;
+      case 'signals': return systemConfig.isSignalsEnabled;
+      case 'feeds': return systemConfig.isFeedsEnabled;
+      case 'users': return systemConfig.isUsersEnabled;
+      default: return true;
     }
   };
 
-  const saveAndSync = (updated: UserProfile[]) => {
-    setUsers(updated);
-    StorageService.saveUsers(updated);
-  };
-
-  // Check if current user has active Push or approved connection with target
   const hasPushWithUser = (targetUsername: string): boolean => {
-    if (!currentUser || !targetUsername || targetUsername.toLowerCase() === currentUser.username.toLowerCase()) return false;
+    if (!currentUser || !targetUsername) return false;
+    if (targetUsername.toLowerCase() === currentUser.username.toLowerCase()) return false;
     const targetUser = users.find(u => u.username.toLowerCase() === targetUsername.toLowerCase());
     if (!targetUser) return false;
-
-    // Check connections
     const myConn = currentUser.connections?.[targetUser.id];
-    if (myConn && (myConn.state === 'CONNECTED' || myConn.hasPushAccess)) {
-      return true;
-    }
-
-    // Check journals
-    const journals = StorageService.getJournals();
-    return journals.some(j =>
-      (j.authorUsername.toLowerCase() === currentUser.username.toLowerCase() && j.pushedTo?.some(p => p.sharedWithUsername.toLowerCase() === targetUsername.toLowerCase())) ||
-      (j.authorUsername.toLowerCase() === targetUsername.toLowerCase() && j.pushedTo?.some(p => p.sharedWithUsername.toLowerCase() === currentUser.username.toLowerCase())) ||
-      (j.pushedBy?.toLowerCase() === targetUsername.toLowerCase() && j.userId === currentUser.id)
-    );
+    return myConn?.state === 'CONNECTED' && myConn?.hasPushAccess === true;
   };
 
   const getConnectionState = (targetUserId: string): ConnectionState => {
-    if (!currentUser || targetUserId === currentUser.id) return 'NONE';
+    if (!currentUser) return 'NONE';
     const conn = currentUser.connections?.[targetUserId];
-    return conn ? conn.state : 'NONE';
+    if (!conn) return 'NONE';
+    return conn.state as ConnectionState;
+  };
+
+  const logAdminAction = (
+    action: ActivityLog['action'],
+    details: string,
+    target?: string,
+    severity: ActivityLog['severity'] = 'INFO'
+  ) => {
+    if (!currentUser) return;
+    SupabaseService.createActivityLog({
+      actorUsername: currentUser.username,
+      action,
+      target,
+      details,
+      severity,
+    });
   };
 
   const sendConnectionRequest = (targetUserId: string) => {
     if (!currentUser) return;
-    const target = users.find(u => u.id === targetUserId);
-    if (!target) return;
-
-    const updated = users.map(u => {
-      if (u.id === currentUser.id) {
-        return {
-          ...u,
-          connections: {
-            ...u.connections,
-            [targetUserId]: {
-              targetUserId,
-              targetUsername: target.username,
-              state: 'PENDING_SENT' as ConnectionState,
-              hasPushAccess: false,
-            }
-          }
-        };
-      }
-      if (u.id === targetUserId) {
-        return {
-          ...u,
-          connections: {
-            ...u.connections,
-            [currentUser.id]: {
-              targetUserId: currentUser.id,
-              targetUsername: currentUser.username,
-              state: 'PENDING_RECEIVED' as ConnectionState,
-              hasPushAccess: false,
-            }
-          }
-        };
-      }
-      return u;
-    });
-
-    saveAndSync(updated);
-    SupabaseService.sendConnectionRequest(currentUser.id, targetUserId);
-
-    logAdminAction(
-      'ACCESS_GRANTED',
-      `Sent connection request to @${target.username}`,
-      target.username,
-      'INFO'
-    );
+    SupabaseService.sendConnectionRequest(currentUser.id, targetUserId).then(() => refreshUsers());
+    logAdminAction('PERMISSIONS_UPDATED', `Sent connection request to user ${targetUserId}`, targetUserId, 'INFO');
   };
 
   const acceptConnectionRequest = (targetUserId: string) => {
     if (!currentUser) return;
-    const target = users.find(u => u.id === targetUserId);
-    if (!target) return;
-    const now = new Date().toISOString();
-
-    const updated = users.map(u => {
-      if (u.id === currentUser.id) {
-        return {
-          ...u,
-          connections: {
-            ...u.connections,
-            [targetUserId]: {
-              targetUserId,
-              targetUsername: target.username,
-              state: 'CONNECTED' as ConnectionState,
-              hasPushAccess: true,
-              connectedAt: now
-            }
-          }
-        };
-      }
-      if (u.id === targetUserId) {
-        return {
-          ...u,
-          connections: {
-            ...u.connections,
-            [currentUser.id]: {
-              targetUserId: currentUser.id,
-              targetUsername: currentUser.username,
-              state: 'CONNECTED' as ConnectionState,
-              hasPushAccess: true,
-              connectedAt: now
-            }
-          }
-        };
-      }
-      return u;
-    });
-
-    saveAndSync(updated);
-    SupabaseService.acceptConnectionRequest(currentUser.id, targetUserId);
-
-    logAdminAction(
-      'ACCESS_GRANTED',
-      `Approved connection and Push permissions with @${target.username}`,
-      target.username,
-      'INFO'
-    );
+    SupabaseService.acceptConnectionRequest(currentUser.id, targetUserId).then(() => refreshUsers());
   };
 
   const rejectConnectionRequest = (targetUserId: string) => {
     if (!currentUser) return;
-    const updated = users.map(u => {
-      if (u.id === currentUser.id) {
-        const nextConns = { ...u.connections };
-        delete nextConns[targetUserId];
-        return { ...u, connections: nextConns };
-      }
-      if (u.id === targetUserId) {
-        const nextConns = { ...u.connections };
-        delete nextConns[currentUser.id];
-        return { ...u, connections: nextConns };
-      }
-      return u;
-    });
-
-    saveAndSync(updated);
-    SupabaseService.deleteConnection(currentUser.id, targetUserId);
+    SupabaseService.deleteConnection(currentUser.id, targetUserId).then(() => refreshUsers());
   };
 
   const disconnectUser = (targetUserId: string) => {
-    rejectConnectionRequest(targetUserId);
+    if (!currentUser) return;
+    SupabaseService.deleteConnection(currentUser.id, targetUserId).then(() => refreshUsers());
   };
 
   const grantPushAccess = (targetUsername: string) => {
@@ -278,163 +184,57 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       connections: {}
     };
 
-    await SupabaseService.createProfile(newUser);
-    const next = [newUser, ...users];
-    saveAndSync(next);
-
-    logAdminAction(
-      'USER_CREATED',
-      `Admin provisioned new account @${cleanUsername} (${userData.role}).`,
-      cleanUsername,
-      'INFO'
-    );
-    return true;
+    const ok = await SupabaseService.createProfile(newUser);
+    if (ok) {
+      await refreshUsers();
+      logAdminAction('USER_CREATED', `Admin provisioned new account @${cleanUsername} (${userData.role}).`, cleanUsername, 'INFO');
+    }
+    return ok;
   };
 
   const adminUpdateUserRole = (userId: string, newRole: UserRole) => {
     const target = users.find(u => u.id === userId);
     if (!target) return;
-
-    const updated = users.map(u => {
-      if (u.id === userId) {
-        return {
-          ...u,
-          role: newRole,
-          isVerified: newRole === 'ADMIN' || newRole === 'PRO_TRADER' ? true : u.isVerified,
-          permissions: {
-            canPublishSignals: u.permissions?.canPublishSignals ?? true,
-            canPushJournals: u.permissions?.canPushJournals ?? true,
-            canViewAllJournals: newRole === 'ADMIN',
-            canModerateSignals: newRole === 'ADMIN' || newRole === 'MODERATOR',
-            maxActiveSignals: newRole === 'ADMIN' ? 999 : newRole === 'PRO_TRADER' ? 20 : 5,
-          }
-        };
-      }
-      return u;
-    });
-
-    saveAndSync(updated);
-    SupabaseService.updateProfile(userId, { role: newRole });
-
-    logAdminAction(
-      'ROLE_UPDATED',
-      `Changed @${target.username} role from ${target.role} to ${newRole}.`,
-      target.username,
-      newRole === 'ADMIN' ? 'WARNING' : 'INFO'
-    );
+    SupabaseService.updateProfile(userId, { role: newRole }).then(() => refreshUsers());
+    logAdminAction('ROLE_UPDATED', `Changed @${target.username} role from ${target.role} to ${newRole}.`, target.username, newRole === 'ADMIN' ? 'WARNING' : 'INFO');
   };
 
   const adminToggleUserStatus = (userId: string, newStatus: AccountStatus, reason?: string) => {
     const target = users.find(u => u.id === userId);
     if (!target) return;
-
-    const updated = users.map(u => (u.id === userId ? { ...u, status: newStatus, banReason: reason } : u));
-    saveAndSync(updated);
-    SupabaseService.updateProfile(userId, { status: newStatus, banReason: reason });
-
-    const action = newStatus === 'SUSPENDED' ? 'USER_BANNED' : 'USER_UNBANNED';
-    const severity = newStatus === 'SUSPENDED' ? 'CRITICAL' : 'INFO';
+    SupabaseService.updateProfile(userId, { status: newStatus, banReason: reason }).then(() => refreshUsers());
     const details = newStatus === 'SUSPENDED'
       ? `Account @${target.username} suspended. Reason: ${reason || 'Violation of terms'}`
       : `Account @${target.username} reinstated to ACTIVE status.`;
-
-    logAdminAction(action, details, target.username, severity);
+    logAdminAction(newStatus === 'SUSPENDED' ? 'USER_BANNED' : 'USER_UNBANNED', details, target.username, newStatus === 'SUSPENDED' ? 'CRITICAL' : 'INFO');
   };
 
   const adminToggleVerified = (userId: string) => {
     const target = users.find(u => u.id === userId);
     if (!target) return;
-
     const nextVerified = !target.isVerified;
-    const updated = users.map(u => (u.id === userId ? { ...u, isVerified: nextVerified } : u));
-    saveAndSync(updated);
-    SupabaseService.updateProfile(userId, { isVerified: nextVerified });
-
-    logAdminAction(
-      'PERMISSIONS_UPDATED',
-      `${nextVerified ? 'Granted' : 'Revoked'} verified trader badge for @${target.username}.`,
-      target.username,
-      'INFO'
-    );
+    SupabaseService.updateProfile(userId, { isVerified: nextVerified }).then(() => refreshUsers());
+    logAdminAction('PERMISSIONS_UPDATED', `${nextVerified ? 'Granted' : 'Revoked'} verified badge for @${target.username}.`, target.username, 'INFO');
   };
 
   const adminUpdatePermissions = (userId: string, permissions: Partial<UserPermissions>) => {
     const target = users.find(u => u.id === userId);
     if (!target) return;
-
-    const updated = users.map(u => {
-      if (u.id === userId) {
-        return {
-          ...u,
-          permissions: {
-            canPublishSignals: permissions.canPublishSignals ?? u.permissions?.canPublishSignals ?? true,
-            canPushJournals: permissions.canPushJournals ?? u.permissions?.canPushJournals ?? true,
-            canViewAllJournals: permissions.canViewAllJournals ?? u.permissions?.canViewAllJournals ?? false,
-            canModerateSignals: permissions.canModerateSignals ?? u.permissions?.canModerateSignals ?? false,
-            maxActiveSignals: permissions.maxActiveSignals ?? u.permissions?.maxActiveSignals ?? 5,
-          }
-        };
-      }
-      return u;
-    });
-
-    saveAndSync(updated);
-    SupabaseService.updateProfile(userId, { permissions: permissions as UserPermissions });
-
-    logAdminAction(
-      'PERMISSIONS_UPDATED',
-      `Customized access permissions for @${target.username}.`,
-      target.username,
-      'INFO'
-    );
+    SupabaseService.updateProfile(userId, { permissions: { ...target.permissions, ...permissions } as UserPermissions }).then(() => refreshUsers());
+    logAdminAction('PERMISSIONS_UPDATED', `Updated permissions for @${target.username}.`, target.username, 'INFO');
   };
 
   const adminDeleteUser = (userId: string) => {
     const target = users.find(u => u.id === userId);
-    if (!target || (currentUser && target.id === currentUser.id)) return;
-
-    const updated = users.filter(u => u.id !== userId);
-    saveAndSync(updated);
-    SupabaseService.deleteProfile(userId);
-
-    logAdminAction(
-      'USER_BANNED',
-      `Permanently deleted user record for @${target.username}.`,
-      target.username,
-      'CRITICAL'
-    );
+    if (!target) return;
+    SupabaseService.deleteProfile(userId).then(() => refreshUsers());
+    logAdminAction('USER_BANNED', `Deleted account @${target.username}.`, target.username, 'CRITICAL');
   };
 
   const updateSystemConfig = (updates: Partial<SystemAccessConfig>) => {
     const next = { ...systemConfig, ...updates };
     setSystemConfig(next);
-    StorageService.saveSystemConfig(next);
-    SupabaseService.updateSystemConfig(next);
-
-    logAdminAction(
-      'CONFIG_UPDATED',
-      `Updated platform access controls & menu visibility settings.`,
-      'System Settings',
-      'WARNING'
-    );
-  };
-
-  const logAdminAction = (
-    action: ActivityLog['action'],
-    details: string,
-    target?: string,
-    severity: ActivityLog['severity'] = 'INFO'
-  ) => {
-    const actor = currentUser?.username || 'system';
-    StorageService.logActivity(actor, action, details, target, severity);
-    SupabaseService.createActivityLog({
-      actorUsername: actor,
-      action,
-      target,
-      details,
-      severity
-    });
-    setActivityLogs(StorageService.getActivityLogs());
+    SupabaseService.updateSystemConfig(updates);
   };
 
   return (
@@ -459,7 +259,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         adminDeleteUser,
         updateSystemConfig,
         logAdminAction,
-        refreshUserData
+        refreshUserData,
       }}
     >
       {children}

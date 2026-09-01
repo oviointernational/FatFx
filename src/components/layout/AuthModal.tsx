@@ -45,16 +45,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     }
 
     setIsSubmitting(true);
-    const ok = await login(loginInput.trim(), loginPassword);
+    const res = await login(loginInput.trim(), loginPassword);
     setIsSubmitting(false);
 
-    if (ok) {
+    if (res.success) {
       onClose();
       setLoginInput('');
       setLoginPassword('');
       setLoginError('');
     } else {
-      setLoginError('Invalid credentials. Please check your username/email and password.');
+      setLoginError(res.error || 'Invalid credentials. Please check your username/email and password.');
     }
   };
 
@@ -81,10 +81,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     }
 
     setIsSubmitting(true);
-    const ok = await register(regUsername, regFullName, regEmail, regPassword);
+    const res = await register(regUsername, regFullName, regEmail, regPassword);
     setIsSubmitting(false);
 
-    if (ok) {
+    if (res.success) {
       setRegSuccess(true);
       setTimeout(() => {
         onClose();
@@ -96,7 +96,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         setRegConfirmPassword('');
       }, 1500);
     } else {
-      setRegError('Username or email already exists.');
+      setRegError(res.error || 'Username or email already exists.');
     }
   };
 

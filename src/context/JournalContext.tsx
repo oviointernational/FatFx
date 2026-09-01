@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { JournalEntry, MonthCapitalConfig } from '../types/journal';
-import { StorageService } from '../services/storage';
 import { SupabaseService } from '../services/supabaseService';
 import { useAuth } from './AuthContext';
 
@@ -21,28 +20,30 @@ const JournalContext = createContext<JournalContextType | undefined>(undefined);
 
 export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser, users } = useAuth();
-  const [journals, setJournals] = useState<JournalEntry[]>(() => StorageService.getJournals());
-  const [capitalConfigs, setCapitalConfigs] = useState<MonthCapitalConfig[]>(() => StorageService.getCapitalConfigs());
+  const [journals, setJournals] = useState<JournalEntry[]>([]);
+  const [capitalConfigs, setCapitalConfigs] = useState<MonthCapitalConfig[]>(() => {
+    return Array.from({ length: 12 }, (_, i) => ({
+      year: new Date().getFullYear(),
+      month: i,
+      capital: 10000
+    }));
+  });
 
   const refreshJournals = async () => {
     const remote = await SupabaseService.getJournals();
     if (remote) {
       setJournals(remote);
-      StorageService.saveJournals(remote);
-    } else {
-      setJournals(StorageService.getJournals());
     }
-    setCapitalConfigs(StorageService.getCapitalConfigs());
   };
 
   useEffect(() => {
-    refreshJournals();
+    let mounted = true;
+    (async () => {
+      const remote = await SupabaseService.getJournals();
+      if (mounted && remote) setJournals(remote);
+    })();
+    return () => { mounted = false; };
   }, [currentUser?.id]);
-
-  const saveJournals = (next: JournalEntry[]) => {
-    setJournals(next);
-    StorageService.saveJournals(next);
-  };
 
   const getMyJournals = (): JournalEntry[] => {
     if (!currentUser) return [];
@@ -52,52 +53,35 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const getPushedJournals = (): JournalEntry[] => {
     if (!currentUser) return [];
     return journals.filter(j =>
-      (j.isPushed && j.pushedTo?.some(p => p.sharedWithUsername.toLowerCase() === currentUser.username.toLowerCase())) ||
-      (j.pushedBy && j.userId === currentUser.id) ||
-      (j.pushedTo?.some(p => p.sharedWithUsername.toLowerCase() === currentUser.username.toLowerCase()))
+      j.pushedTo?.some(p => p.sharedWithUsername.toLowerCase() === currentUser.username.toLowerCase())
     );
   };
 
   const addJournal = async (entry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>): Promise<JournalEntry> => {
-    const now = new Date().toISOString();
-    const tempId = `jrn_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    const newEntry: JournalEntry = {
-      ...entry,
-      id: tempId,
-      createdAt: now,
-      updatedAt: now,
-      pushedTo: entry.pushedTo || [],
-    };
-
-    // Optimistic UI update
-    const next = [newEntry, ...journals];
-    saveJournals(next);
-
-    // Sync remote
     const remoteEntry = await SupabaseService.createJournal(entry);
     if (remoteEntry) {
-      const synced = next.map(j => (j.id === tempId ? remoteEntry : j));
-      saveJournals(synced);
+      setJournals(prev => [remoteEntry, ...prev]);
       return remoteEntry;
     }
-
-    return newEntry;
+    // Fallback temp entry if Supabase failed
+    const fallback: JournalEntry = {
+      ...entry,
+      id: `jrn_temp_${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      pushedTo: entry.pushedTo || [],
+    };
+    console.error('[JournalContext] addJournal: Supabase insert failed.');
+    return fallback;
   };
 
   const updateJournal = (id: string, updates: Partial<JournalEntry>) => {
-    const next = journals.map(j => {
-      if (j.id === id) {
-        return { ...j, ...updates, updatedAt: new Date().toISOString() };
-      }
-      return j;
-    });
-    saveJournals(next);
+    setJournals(prev => prev.map(j => j.id === id ? { ...j, ...updates, updatedAt: new Date().toISOString() } : j));
     SupabaseService.updateJournal(id, updates);
   };
 
   const deleteJournal = (id: string) => {
-    const next = journals.filter(j => j.id !== id);
-    saveJournals(next);
+    setJournals(prev => prev.filter(j => j.id !== id));
     SupabaseService.deleteJournal(id);
   };
 
@@ -120,26 +104,19 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
       sharedByUsername: currentUser.username,
     };
 
-    const nextPushedTo = [...(journal.pushedTo || []), shareRecord];
-
-    // Update original journal
-    updateJournal(journalId, { pushedTo: nextPushedTo });
-
-    // Sync remote share
+    updateJournal(journalId, { pushedTo: [...(journal.pushedTo || []), shareRecord] });
     SupabaseService.pushJournal(journalId, currentUser.id, targetUser.id);
     return true;
   };
 
   const updateCapital = (year: number, month: number, capital: number) => {
-    const existing = capitalConfigs.findIndex(c => c.year === year && c.month === month);
-    let next: MonthCapitalConfig[];
-    if (existing >= 0) {
-      next = capitalConfigs.map((c, i) => i === existing ? { ...c, capital } : c);
-    } else {
-      next = [...capitalConfigs, { year, month, capital }];
-    }
-    setCapitalConfigs(next);
-    StorageService.saveCapitalConfigs(next);
+    setCapitalConfigs(prev => {
+      const existing = prev.findIndex(c => c.year === year && c.month === month);
+      if (existing >= 0) {
+        return prev.map((c, i) => i === existing ? { ...c, capital } : c);
+      }
+      return [...prev, { year, month, capital }];
+    });
   };
 
   return (

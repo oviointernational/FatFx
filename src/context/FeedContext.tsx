@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Post, PostType, PostStep, PostMedia } from '../types/feed';
-import { StorageService } from '../services/storage';
 import { SupabaseService } from '../services/supabaseService';
 import { useAuth } from './AuthContext';
 import { useUsers } from './UserContext';
+import { generateUUID } from '../utils/formatters';
 
 interface FeedContextType {
   posts: Post[];
@@ -26,26 +26,26 @@ const FeedContext = createContext<FeedContextType | undefined>(undefined);
 export const FeedProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
   const { hasPushWithUser, getConnectionState } = useUsers();
-  const [posts, setPosts] = useState<Post[]>(() => StorageService.getPosts());
+  const [posts, setPosts] = useState<Post[]>([]);
 
   const refreshPosts = async () => {
     const remote = await SupabaseService.getPosts();
     if (remote) {
       setPosts(remote);
-      StorageService.savePosts(remote);
-    } else {
-      setPosts(StorageService.getPosts());
     }
   };
 
   useEffect(() => {
-    refreshPosts();
+    let mounted = true;
+    (async () => {
+      const remote = await SupabaseService.getPosts();
+      if (mounted && remote) setPosts(remote);
+    })();
+    return () => { mounted = false; };
   }, [currentUser?.id]);
 
   const getPersonalizedFeed = (filterMode: 'ALL' | 'CONNECTED' | 'PRO'): Post[] => {
-    if (!currentUser && filterMode === 'CONNECTED') {
-      return [];
-    }
+    if (!currentUser && filterMode === 'CONNECTED') return [];
 
     if (filterMode === 'CONNECTED' && currentUser) {
       return posts.filter(p =>
@@ -68,10 +68,10 @@ export const FeedProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ));
 
     return [...posts].sort((a, b) => {
-      const aConnected = isConnected(a);
-      const bConnected = isConnected(b);
-      if (aConnected && !bConnected) return -1;
-      if (!aConnected && bConnected) return 1;
+      const aC = isConnected(a);
+      const bC = isConnected(b);
+      if (aC && !bC) return -1;
+      if (!aC && bC) return 1;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   };
@@ -99,12 +99,11 @@ export const FeedProvider: React.FC<{ children: React.ReactNode }> = ({ children
       tags: postData.tags,
     };
 
-    const newLocal = StorageService.addPost(payload);
-    setPosts(prev => [newLocal, ...prev]);
-
     const remote = await SupabaseService.createPost(payload);
     if (remote) {
-      setPosts(prev => prev.map(p => (p.id === newLocal.id ? remote : p)));
+      setPosts(prev => [remote, ...prev]);
+    } else {
+      console.error('[FeedContext] addPost: Supabase insert failed.');
     }
   };
 
@@ -114,7 +113,7 @@ export const FeedProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!target) return;
     const isCurrentlyLiked = target.likes.includes(currentUser.id);
 
-    StorageService.likePost(postId, currentUser.id);
+    // Optimistic UI update
     setPosts(prev => prev.map(p => {
       if (p.id === postId) {
         const nextLikes = isCurrentlyLiked
@@ -130,20 +129,28 @@ export const FeedProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addComment = (postId: string, content: string) => {
     if (!currentUser || !content.trim()) return;
-    StorageService.addComment(postId, {
+
+    const newComment = {
+      id: generateUUID(),
+      postId,
       authorId: currentUser.id,
       authorUsername: currentUser.username,
       authorFullName: currentUser.fullName,
       authorAvatarUrl: currentUser.avatarUrl,
       authorRole: currentUser.role,
-      content: content.trim()
-    });
-    setPosts(StorageService.getPosts());
+      content: content.trim(),
+      createdAt: new Date().toISOString(),
+    };
+
+    // Optimistic UI update
+    setPosts(prev => prev.map(p =>
+      p.id === postId ? { ...p, comments: [...p.comments, newComment] } : p
+    ));
+
     SupabaseService.createPostComment(postId, currentUser.id, content.trim());
   };
 
   const deletePost = (postId: string) => {
-    StorageService.deletePost(postId);
     setPosts(prev => prev.filter(p => p.id !== postId));
     SupabaseService.deletePost(postId);
   };
@@ -157,7 +164,7 @@ export const FeedProvider: React.FC<{ children: React.ReactNode }> = ({ children
         likePost,
         addComment,
         deletePost,
-        refreshPosts
+        refreshPosts,
       }}
     >
       {children}

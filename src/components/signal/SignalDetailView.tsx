@@ -4,7 +4,6 @@ import { Signal } from '../../types/signal';
 import { LongShortChart } from './LongShortChart';
 import { useSignals } from '../../context/SignalContext';
 import { useAuth } from '../../context/AuthContext';
-import { StorageService } from '../../services/storage';
 import { formatPrice, MONTH_SHORT_NAMES } from '../../utils/formatters';
 import clsx from 'clsx';
 
@@ -15,13 +14,12 @@ interface SignalDetailViewProps {
 
 export const SignalDetailView: React.FC<SignalDetailViewProps> = ({ signal, onBack }) => {
   const { shareSignal } = useSignals();
-  const { currentUser } = useAuth();
+  const { currentUser, users } = useAuth();
   const [shareUsername, setShareUsername] = useState('');
   const [shareError, setShareError] = useState('');
   const [shareSuccess, setShareSuccess] = useState(false);
   const [showSharePanel, setShowSharePanel] = useState(false);
 
-  const users = StorageService.getUsers();
   const isBuy = signal.type === 'BUY';
   const { priceLevels } = signal;
 

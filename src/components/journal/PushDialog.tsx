@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { X, Send, Link, User, CheckCircle } from 'lucide-react';
 import { useJournal } from '../../context/JournalContext';
 import { useAuth } from '../../context/AuthContext';
-import { StorageService } from '../../services/storage';
 
 interface PushDialogProps {
   journalId: string;
@@ -12,7 +11,7 @@ interface PushDialogProps {
 
 export const PushDialog: React.FC<PushDialogProps> = ({ journalId, isOpen, onClose }) => {
   const { pushJournal, journals } = useJournal();
-  const { currentUser } = useAuth();
+  const { currentUser, users } = useAuth();
   const [username, setUsername] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -20,7 +19,6 @@ export const PushDialog: React.FC<PushDialogProps> = ({ journalId, isOpen, onClo
   if (!isOpen) return null;
   if (!currentUser) return null;
 
-  const users = StorageService.getUsers();
   const journal = journals.find(j => j.id === journalId);
   const alreadyPushedTo = journal?.pushedTo?.map(p => p.sharedWithUsername) || [];
   const otherUsers = users.filter(u => u.id !== currentUser.id && !alreadyPushedTo.includes(u.username));
