@@ -24,7 +24,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, isOpen
 
   if (!isOpen || !user) return null;
 
-  const isMe = user.id === currentUser.id;
+  const isMe = user.id === currentUser?.id;
   const hasPush = hasPushWithUser(user.username);
   const connState = getConnectionState(user.id);
   const isApproved = isMe || connState === 'CONNECTED' || hasPush;
@@ -35,7 +35,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, isOpen
   // Filter journals authored by this user that are visible (either pushed to me or user is approved)
   const userJournals = journals.filter(j => 
     (j.authorUsername.toLowerCase() === user.username.toLowerCase()) &&
-    (isApproved || j.pushedTo?.some(p => p.sharedWithUsername === currentUser.username))
+    (isApproved || Boolean(currentUser && j.pushedTo?.some(p => p.sharedWithUsername === currentUser.username)))
   );
 
   return (

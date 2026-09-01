@@ -32,6 +32,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClos
   ]);
 
   if (!isOpen) return null;
+  if (!currentUser) return null;
 
   // Auto-detect media type from link
   const detectMediaType = (url: string): 'IMAGE' | 'VIDEO' | 'TRADINGVIEW' | 'LINK' => {

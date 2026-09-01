@@ -73,6 +73,7 @@ export const JournalModal: React.FC<JournalModalProps> = ({ isOpen, onClose, edi
   }, [editEntry, isOpen]);
 
   if (!isOpen) return null;
+  if (!currentUser) return null;
 
   const totalProfit = grossPL - commissions;
   const gainPct = monthlyStartBalance > 0 ? (totalProfit / monthlyStartBalance) * 100 : 0;

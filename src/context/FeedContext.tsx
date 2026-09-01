@@ -18,7 +18,7 @@ interface FeedContextType {
   likePost: (postId: string) => void;
   addComment: (postId: string, content: string) => void;
   deletePost: (postId: string) => void;
-  refreshPosts: () => void;
+  refreshPosts: () => Promise<void>;
 }
 
 const FeedContext = createContext<FeedContextType | undefined>(undefined);
@@ -40,10 +40,14 @@ export const FeedProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     refreshPosts();
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   const getPersonalizedFeed = (filterMode: 'ALL' | 'CONNECTED' | 'PRO'): Post[] => {
-    if (filterMode === 'CONNECTED') {
+    if (!currentUser && filterMode === 'CONNECTED') {
+      return [];
+    }
+
+    if (filterMode === 'CONNECTED' && currentUser) {
       return posts.filter(p =>
         p.authorId === currentUser.id ||
         hasPushWithUser(p.authorUsername) ||
@@ -55,11 +59,13 @@ export const FeedProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return posts.filter(p => p.authorRole === 'PRO_TRADER' || p.authorRole === 'ADMIN');
     }
 
-    const connectedUserIds = Object.keys(currentUser.connections || {});
+    const connectedUserIds = currentUser ? Object.keys(currentUser.connections || {}) : [];
     const isConnected = (p: Post) =>
-      p.authorId === currentUser.id ||
-      connectedUserIds.includes(p.authorId) ||
-      hasPushWithUser(p.authorUsername);
+      Boolean(currentUser && (
+        p.authorId === currentUser.id ||
+        connectedUserIds.includes(p.authorId) ||
+        hasPushWithUser(p.authorUsername)
+      ));
 
     return [...posts].sort((a, b) => {
       const aConnected = isConnected(a);
@@ -77,6 +83,8 @@ export const FeedProvider: React.FC<{ children: React.ReactNode }> = ({ children
     mediaLinks?: PostMedia[];
     tags?: string[];
   }) => {
+    if (!currentUser) return;
+
     const payload = {
       authorId: currentUser.id,
       authorUsername: currentUser.username,
@@ -101,6 +109,7 @@ export const FeedProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const likePost = (postId: string) => {
+    if (!currentUser) return;
     const target = posts.find(p => p.id === postId);
     if (!target) return;
     const isCurrentlyLiked = target.likes.includes(currentUser.id);
@@ -120,7 +129,7 @@ export const FeedProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addComment = (postId: string, content: string) => {
-    if (!content.trim()) return;
+    if (!currentUser || !content.trim()) return;
     StorageService.addComment(postId, {
       authorId: currentUser.id,
       authorUsername: currentUser.username,

@@ -32,6 +32,7 @@ export const CreateSignalModal: React.FC<CreateSignalModalProps> = ({ isOpen, on
   const [tvUrl, setTvUrl] = useState('');
 
   if (!isOpen) return null;
+  if (!currentUser) return null;
 
   const entryNum = parseFloat(entry) || 0;
   const slNum = parseFloat(sl) || 0;

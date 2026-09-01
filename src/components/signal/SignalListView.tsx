@@ -37,7 +37,7 @@ export const SignalListView: React.FC = () => {
 
   // Author display helper: If the logged-in user is author, display "@you", else "@username"
   const formatAuthor = (authorUsername: string) => {
-    if (authorUsername.toLowerCase() === currentUser.username.toLowerCase() || authorUsername === 'you') {
+    if (currentUser && (authorUsername.toLowerCase() === currentUser.username.toLowerCase() || authorUsername === 'you')) {
       return '@you';
     }
     return `@${authorUsername}`;

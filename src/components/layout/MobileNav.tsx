@@ -14,7 +14,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ activeView, onViewChange }
   const { currentUser, isAdmin } = useAuth();
   const { isMenuAllowed } = useUsers();
 
-  const chainCount = Object.values(currentUser.connections || {}).filter(
+  const chainCount = Object.values(currentUser?.connections || {}).filter(
     c => c.state === 'CONNECTED' || c.hasPushAccess
   ).length;
 

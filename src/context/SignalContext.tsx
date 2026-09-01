@@ -41,7 +41,7 @@ export const SignalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   useEffect(() => {
     refreshSignals();
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   const saveSignals = (next: Signal[]) => {
     setSignals(next);

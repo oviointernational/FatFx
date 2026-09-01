@@ -15,7 +15,7 @@ export const UserCard: React.FC<UserCardProps> = ({ user, onSelectUser, onPushTo
   const { hasPushWithUser, getConnectionState, sendConnectionRequest, acceptConnectionRequest } = useUsers();
   const { currentUser } = useAuth();
 
-  const isMe = user.id === currentUser.id;
+  const isMe = user.id === currentUser?.id;
   const hasPush = hasPushWithUser(user.username);
   const connState: ConnectionState = getConnectionState(user.id);
 

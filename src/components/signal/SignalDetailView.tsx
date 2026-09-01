@@ -28,7 +28,7 @@ export const SignalDetailView: React.FC<SignalDetailViewProps> = ({ signal, onBa
   const handleShare = () => {
     const trimmed = shareUsername.trim().toLowerCase();
     if (!trimmed) { setShareError('Enter a username'); return; }
-    if (trimmed === currentUser.username.toLowerCase()) { setShareError("Can't share with yourself"); return; }
+    if (trimmed === currentUser?.username.toLowerCase()) { setShareError("Can't share with yourself"); return; }
     const exists = users.find(u => u.username.toLowerCase() === trimmed);
     if (!exists) { setShareError('User not found on FatFx'); return; }
 
@@ -216,7 +216,7 @@ export const SignalDetailView: React.FC<SignalDetailViewProps> = ({ signal, onBa
                   {shareError && <p className="text-xs text-red-500 mt-1">{shareError}</p>}
                 </div>
                 <div className="space-y-1 max-h-40 overflow-y-auto">
-                  {users.filter(u => u.id !== currentUser.id && !signal.sharedWith.some(sw => sw.recipientUsername === u.username)).slice(0, 5).map(u => (
+                  {users.filter(u => u.id !== currentUser?.id && !signal.sharedWith.some(sw => sw.recipientUsername === u.username)).slice(0, 5).map(u => (
                     <button key={u.id} onClick={() => setShareUsername(u.username)}
                       className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-fatfx-surface-subtle transition-all text-left">
                       <div className="w-7 h-7 rounded-full overflow-hidden ring-1 ring-fatfx-border shrink-0">

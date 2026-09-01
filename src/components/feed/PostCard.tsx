@@ -22,8 +22,8 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onSelectUser }) => {
   const [commentInput, setCommentInput] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const isLiked = post.likes.includes(currentUser.id);
-  const canDelete = post.authorId === currentUser.id || isAdmin;
+  const isLiked = currentUser ? post.likes.includes(currentUser.id) : false;
+  const canDelete = currentUser ? (post.authorId === currentUser.id || isAdmin) : false;
 
   const handleLike = () => {
     likePost(post.id);

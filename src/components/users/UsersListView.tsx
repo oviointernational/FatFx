@@ -16,13 +16,13 @@ export const UsersListView: React.FC = () => {
 
   // Incoming connection requests
   const pendingRequests = users.filter(u => {
-    const conn = currentUser.connections?.[u.id];
+    const conn = currentUser?.connections?.[u.id];
     return conn && conn.state === 'PENDING_RECEIVED';
   });
 
   // Connected / Pushed users
   const connectedUsers = users.filter(u => {
-    if (u.id === currentUser.id) return false;
+    if (currentUser && u.id === currentUser.id) return false;
     return hasPushWithUser(u.username) || getConnectionState(u.id) === 'CONNECTED';
   });
 
@@ -39,7 +39,7 @@ export const UsersListView: React.FC = () => {
       return hasPushWithUser(u.username) || getConnectionState(u.id) === 'CONNECTED';
     }
     if (filterTab === 'requests') {
-      const conn = currentUser.connections?.[u.id];
+      const conn = currentUser?.connections?.[u.id];
       return conn && conn.state === 'PENDING_RECEIVED';
     }
     return true;

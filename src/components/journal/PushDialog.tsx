@@ -18,6 +18,7 @@ export const PushDialog: React.FC<PushDialogProps> = ({ journalId, isOpen, onClo
   const [success, setSuccess] = useState(false);
 
   if (!isOpen) return null;
+  if (!currentUser) return null;
 
   const users = StorageService.getUsers();
   const journal = journals.find(j => j.id === journalId);

@@ -81,26 +81,38 @@ export const AdminDashboard: React.FC = () => {
         </div>
         <h2 className="text-lg font-bold text-slate-900 mb-1">Access Restricted</h2>
         <p className="text-xs text-slate-500 max-w-md mb-6 leading-relaxed">
-          The Admin Control Center and Access Control panel requires <span className="font-semibold text-slate-700">Administrator privileges</span>. You are currently logged in as <span className="font-mono font-bold text-fatfx-teal-700">@{currentUser.username}</span> ({currentUser.role}).
+          {currentUser ? (
+            <>
+              The Admin Control Center requires <span className="font-semibold text-slate-700">Administrator privileges</span>. You are currently signed in as <span className="font-mono font-bold text-fatfx-teal-700">@{currentUser.username}</span> ({currentUser.role}).
+            </>
+          ) : (
+            <>
+              The Admin Control Center requires <span className="font-semibold text-slate-700">Administrator privileges</span>. Please sign in with an administrator account to continue.
+            </>
+          )}
         </p>
 
-        {/* Quick Elevation Button for development testing */}
+        {/* Quick Elevation / Sign In button */}
         <div className="bg-white p-4 rounded-2xl border border-fatfx-border shadow-subtle max-w-sm w-full space-y-3">
-          <p className="text-xs font-semibold text-slate-700">Developer / Admin Access</p>
-          <button
-            onClick={() => {
-              const adminAcc = users.find(u => u.role === 'ADMIN');
-              if (adminAcc) {
-                switchUser(adminAcc.id);
-              } else {
-                adminUpdateUserRole(currentUser.id, 'ADMIN');
-              }
-            }}
-            className="w-full py-2.5 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-fatfx-teal-600 transition-all flex items-center justify-center gap-2"
-          >
-            <Key className="w-3.5 h-3.5" />
-            Switch to Master Admin Account
-          </button>
+          <p className="text-xs font-semibold text-slate-700">Admin Authentication</p>
+          {users.some(u => u.role === 'ADMIN') ? (
+            <button
+              onClick={() => {
+                const adminAcc = users.find(u => u.role === 'ADMIN');
+                if (adminAcc) {
+                  switchUser(adminAcc.id);
+                }
+              }}
+              className="w-full py-2.5 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-fatfx-teal-600 transition-all flex items-center justify-center gap-2"
+            >
+              <Key className="w-3.5 h-3.5" />
+              Switch to Admin Account
+            </button>
+          ) : (
+            <p className="text-xs text-slate-500">
+              No administrator accounts found. Register a new account to become the system administrator.
+            </p>
+          )}
         </div>
       </div>
     );
@@ -190,6 +202,7 @@ export const AdminDashboard: React.FC = () => {
     const rr = risk > 0 ? parseFloat((reward / risk).toFixed(2)) : 3.0;
 
     const now = new Date();
+    if (!currentUser) return;
     addSignal({
       authorId: currentUser.id,
       authorUsername: currentUser.username,
@@ -368,7 +381,7 @@ export const AdminDashboard: React.FC = () => {
             {/* Users Table / List */}
             <div className="grid grid-cols-1 gap-3">
               {filteredUsers.map(u => {
-                const isCurrent = u.id === currentUser.id;
+                const isCurrent = u.id === currentUser?.id;
                 const isSuspended = u.status === 'SUSPENDED';
 
                 return (

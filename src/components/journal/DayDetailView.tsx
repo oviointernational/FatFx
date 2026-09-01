@@ -40,7 +40,7 @@ export const DayDetailView: React.FC<DayDetailViewProps> = ({ date, entries, onB
     }
   };
 
-  const canEditDelete = (entry: JournalEntry) => !isPushedView && entry.userId === currentUser.id;
+  const canEditDelete = (entry: JournalEntry) => !isPushedView && entry.userId === currentUser?.id;
 
   return (
     <div className="flex flex-col h-full">

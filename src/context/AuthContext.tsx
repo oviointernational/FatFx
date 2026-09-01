@@ -1,37 +1,35 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserProfile, UserRole } from '../types/user';
-import { StorageService, DEFAULT_ADMIN_PROFILE } from '../services/storage';
+import { StorageService } from '../services/storage';
 import { SupabaseService } from '../services/supabaseService';
 
 interface AuthContextType {
-  currentUser: UserProfile;
+  currentUser: UserProfile | null;
   users: UserProfile[];
   isAdmin: boolean;
   isModerator: boolean;
   isProTrader: boolean;
   canPublishSignals: boolean;
   canPushJournals: boolean;
-  login: (usernameOrEmail: string) => boolean;
+  login: (usernameOrEmail: string) => Promise<boolean>;
   register: (username: string, fullName: string, email: string, role?: UserRole) => Promise<boolean>;
+  logout: () => void;
   switchUser: (userId: string) => void;
   updateCurrentUser: (updates: Partial<UserProfile>) => void;
-  refreshUsers: () => void;
+  refreshUsers: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<UserProfile[]>(() => StorageService.getUsers());
-  const [currentUserId, setCurrentUserId] = useState<string>(() => StorageService.getCurrentUserId());
+  const [currentUserId, setCurrentUserId] = useState<string | null>(() => StorageService.getCurrentUserId());
 
   const refreshUsers = async () => {
     const remote = await SupabaseService.getProfiles();
     if (remote && remote.length > 0) {
       setUsers(remote);
       StorageService.saveUsers(remote);
-    } else {
-      const local = StorageService.getUsers();
-      setUsers(local);
     }
   };
 
@@ -39,15 +37,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshUsers();
   }, []);
 
-  // Active user
-  const currentUser = users.find(u => u.id === currentUserId) || users[0] || DEFAULT_ADMIN_PROFILE;
+  // Find active authenticated user
+  const currentUser = users.find(u => u.id === currentUserId) || null;
 
-  const isAdmin = currentUser.role === 'ADMIN';
-  const isModerator = currentUser.role === 'ADMIN' || currentUser.role === 'MODERATOR';
-  const isProTrader = currentUser.role === 'PRO_TRADER' || isModerator;
+  const isAdmin = currentUser?.role === 'ADMIN';
+  const isModerator = currentUser?.role === 'ADMIN' || currentUser?.role === 'MODERATOR';
+  const isProTrader = currentUser?.role === 'PRO_TRADER' || isModerator;
 
-  const canPublishSignals = currentUser.status !== 'SUSPENDED' && (currentUser.permissions?.canPublishSignals ?? true);
-  const canPushJournals = currentUser.status !== 'SUSPENDED' && (currentUser.permissions?.canPushJournals ?? true);
+  const canPublishSignals = Boolean(currentUser && currentUser.status !== 'SUSPENDED' && (currentUser.permissions?.canPublishSignals ?? true));
+  const canPushJournals = Boolean(currentUser && currentUser.status !== 'SUSPENDED' && (currentUser.permissions?.canPushJournals ?? true));
 
   const switchUser = (userId: string) => {
     const found = users.find(u => u.id === userId);
@@ -64,14 +62,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const login = (usernameOrEmail: string): boolean => {
+  const login = async (usernameOrEmail: string): Promise<boolean> => {
     const query = usernameOrEmail.trim().toLowerCase();
-    const found = users.find(u => u.username.toLowerCase() === query || u.email.toLowerCase() === query);
+    let currentUsersList = users;
+
+    // Refresh if empty
+    if (currentUsersList.length === 0) {
+      const remote = await SupabaseService.getProfiles();
+      if (remote && remote.length > 0) {
+        currentUsersList = remote;
+        setUsers(remote);
+        StorageService.saveUsers(remote);
+      }
+    }
+
+    const found = currentUsersList.find(u => u.username.toLowerCase() === query || u.email.toLowerCase() === query);
     if (found) {
-      switchUser(found.id);
+      setCurrentUserId(found.id);
+      StorageService.setCurrentUserId(found.id);
       return true;
     }
     return false;
+  };
+
+  const logout = () => {
+    setCurrentUserId(null);
+    StorageService.setCurrentUserId(null);
   };
 
   const register = async (username: string, fullName: string, email: string, role?: UserRole): Promise<boolean> => {
@@ -80,7 +96,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (existing) return false;
 
     // If first user, make ADMIN, otherwise default role
-    const assignedRole = role || (users.length === 0 || (users.length === 1 && users[0].id === DEFAULT_ADMIN_PROFILE.id) ? 'ADMIN' : 'USER');
+    const assignedRole = role || (users.length === 0 ? 'ADMIN' : 'USER');
 
     const newUser: UserProfile = {
       id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -107,7 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Save remote & local
     await SupabaseService.createProfile(newUser);
-    const updatedUsers = [newUser, ...users.filter(u => u.id !== DEFAULT_ADMIN_PROFILE.id || u.username === 'admin')];
+    const updatedUsers = [newUser, ...users];
     setUsers(updatedUsers);
     StorageService.saveUsers(updatedUsers);
 
@@ -119,11 +135,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       'INFO'
     );
 
-    switchUser(newUser.id);
+    setCurrentUserId(newUser.id);
+    StorageService.setCurrentUserId(newUser.id);
     return true;
   };
 
   const updateCurrentUser = (updates: Partial<UserProfile>) => {
+    if (!currentUser) return;
     const updatedUsers = users.map(u => {
       if (u.id === currentUser.id) {
         return { ...u, ...updates };
@@ -147,6 +165,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         canPushJournals,
         login,
         register,
+        logout,
         switchUser,
         updateCurrentUser,
         refreshUsers

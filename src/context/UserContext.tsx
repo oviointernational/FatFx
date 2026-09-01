@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserProfile, ConnectionState, UserRole, AccountStatus, UserPermissions, ActivityLog, SystemAccessConfig } from '../types/user';
-import { StorageService, DEFAULT_SYSTEM_CONFIG } from '../services/storage';
+import { StorageService } from '../services/storage';
 import { SupabaseService } from '../services/supabaseService';
 import { useAuth } from './AuthContext';
 
@@ -25,13 +25,13 @@ interface UserContextType {
   adminDeleteUser: (userId: string) => void;
   updateSystemConfig: (updates: Partial<SystemAccessConfig>) => void;
   logAdminAction: (action: ActivityLog['action'], details: string, target?: string, severity?: ActivityLog['severity']) => void;
-  refreshUserData: () => void;
+  refreshUserData: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { currentUser, refreshUsers, isAdmin } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>(() => StorageService.getUsers());
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => StorageService.getActivityLogs());
   const [systemConfig, setSystemConfig] = useState<SystemAccessConfig>(() => StorageService.getSystemConfig());
@@ -42,8 +42,6 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (remoteProfiles) {
       setUsers(remoteProfiles);
       StorageService.saveUsers(remoteProfiles);
-    } else {
-      setUsers(StorageService.getUsers());
     }
 
     // 2. Fetch config
@@ -51,25 +49,21 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (remoteConfig) {
       setSystemConfig(remoteConfig);
       StorageService.saveSystemConfig(remoteConfig);
-    } else {
-      setSystemConfig(StorageService.getSystemConfig());
     }
 
     // 3. Fetch activity logs
-    const remoteLogs = await SupabaseService.getActivityLogs();
-    if (remoteLogs) {
-      setActivityLogs(remoteLogs);
-      StorageService.saveActivityLogs(remoteLogs);
-    } else {
-      setActivityLogs(StorageService.getActivityLogs());
+    if (isAdmin) {
+      const remoteLogs = await SupabaseService.getActivityLogs();
+      if (remoteLogs) {
+        setActivityLogs(remoteLogs);
+        StorageService.saveActivityLogs(remoteLogs);
+      }
     }
-
-    refreshUsers();
   };
 
   useEffect(() => {
     refreshUserData();
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   // Check if a menu is globally enabled or accessible by user
   const isMenuAllowed = (menuId: 'journal' | 'signals' | 'feeds' | 'users' | 'admin'): boolean => {
@@ -93,12 +87,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const saveAndSync = (updated: UserProfile[]) => {
     setUsers(updated);
     StorageService.saveUsers(updated);
-    refreshUsers();
   };
 
   // Check if current user has active Push or approved connection with target
   const hasPushWithUser = (targetUsername: string): boolean => {
-    if (!targetUsername || targetUsername.toLowerCase() === currentUser.username.toLowerCase()) return false;
+    if (!currentUser || !targetUsername || targetUsername.toLowerCase() === currentUser.username.toLowerCase()) return false;
     const targetUser = users.find(u => u.username.toLowerCase() === targetUsername.toLowerCase());
     if (!targetUser) return false;
 
@@ -118,12 +111,13 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const getConnectionState = (targetUserId: string): ConnectionState => {
-    if (targetUserId === currentUser.id) return 'NONE';
+    if (!currentUser || targetUserId === currentUser.id) return 'NONE';
     const conn = currentUser.connections?.[targetUserId];
     return conn ? conn.state : 'NONE';
   };
 
   const sendConnectionRequest = (targetUserId: string) => {
+    if (!currentUser) return;
     const target = users.find(u => u.id === targetUserId);
     if (!target) return;
 
@@ -169,6 +163,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const acceptConnectionRequest = (targetUserId: string) => {
+    if (!currentUser) return;
     const target = users.find(u => u.id === targetUserId);
     if (!target) return;
     const now = new Date().toISOString();
@@ -217,6 +212,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const rejectConnectionRequest = (targetUserId: string) => {
+    if (!currentUser) return;
     const updated = users.map(u => {
       if (u.id === currentUser.id) {
         const nextConns = { ...u.connections };
@@ -280,7 +276,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     logAdminAction(
       'USER_CREATED',
-      `Admin @${currentUser.username} provisioned new account @${cleanUsername} (${userData.role}).`,
+      `Admin provisioned new account @${cleanUsername} (${userData.role}).`,
       cleanUsername,
       'INFO'
     );
@@ -387,7 +383,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const adminDeleteUser = (userId: string) => {
     const target = users.find(u => u.id === userId);
-    if (!target || target.id === currentUser.id) return;
+    if (!target || (currentUser && target.id === currentUser.id)) return;
 
     const updated = users.filter(u => u.id !== userId);
     saveAndSync(updated);
@@ -421,9 +417,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     target?: string,
     severity: ActivityLog['severity'] = 'INFO'
   ) => {
-    StorageService.logActivity(currentUser.username, action, details, target, severity);
+    const actor = currentUser?.username || 'system';
+    StorageService.logActivity(actor, action, details, target, severity);
     SupabaseService.createActivityLog({
-      actorUsername: currentUser.username,
+      actorUsername: actor,
       action,
       target,
       details,

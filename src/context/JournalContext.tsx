@@ -14,7 +14,7 @@ interface JournalContextType {
   updateCapital: (year: number, month: number, capital: number) => void;
   getMyJournals: () => JournalEntry[];
   getPushedJournals: () => JournalEntry[];
-  refreshJournals: () => void;
+  refreshJournals: () => Promise<void>;
 }
 
 const JournalContext = createContext<JournalContextType | undefined>(undefined);
@@ -37,22 +37,26 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   useEffect(() => {
     refreshJournals();
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   const saveJournals = (next: JournalEntry[]) => {
     setJournals(next);
     StorageService.saveJournals(next);
   };
 
-  const getMyJournals = (): JournalEntry[] =>
-    journals.filter(j => j.userId === currentUser.id && !j.isPushed);
+  const getMyJournals = (): JournalEntry[] => {
+    if (!currentUser) return [];
+    return journals.filter(j => j.userId === currentUser.id && !j.isPushed);
+  };
 
-  const getPushedJournals = (): JournalEntry[] =>
-    journals.filter(j =>
+  const getPushedJournals = (): JournalEntry[] => {
+    if (!currentUser) return [];
+    return journals.filter(j =>
       (j.isPushed && j.pushedTo?.some(p => p.sharedWithUsername.toLowerCase() === currentUser.username.toLowerCase())) ||
       (j.pushedBy && j.userId === currentUser.id) ||
       (j.pushedTo?.some(p => p.sharedWithUsername.toLowerCase() === currentUser.username.toLowerCase()))
     );
+  };
 
   const addJournal = async (entry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>): Promise<JournalEntry> => {
     const now = new Date().toISOString();
@@ -98,6 +102,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const pushJournal = (journalId: string, targetUsername: string): boolean => {
+    if (!currentUser) return false;
     const journal = journals.find(j => j.id === journalId);
     if (!journal) return false;
 

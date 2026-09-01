@@ -26,7 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { currentUser, isAdmin } = useAuth();
   const { isMenuAllowed } = useUsers();
 
-  const chainCount = Object.values(currentUser.connections || {}).filter(
+  const chainCount = Object.values(currentUser?.connections || {}).filter(
     c => c.state === 'CONNECTED' || c.hasPushAccess
   ).length;
 

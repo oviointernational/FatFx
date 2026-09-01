@@ -4,39 +4,14 @@ import { UserProfile, ActivityLog, SystemAccessConfig } from '../types/user';
 import { Post } from '../types/feed';
 
 const STORAGE_KEYS = {
-  USERS: 'fatfx_users_v4',
-  CURRENT_USER_ID: 'fatfx_current_user_id_v4',
-  JOURNALS: 'fatfx_journals_v4',
-  SIGNALS: 'fatfx_signals_v4',
-  CAPITAL_CONFIGS: 'fatfx_capital_configs_v4',
-  ACTIVITY_LOGS: 'fatfx_activity_logs_v4',
-  SYSTEM_CONFIG: 'fatfx_system_config_v4',
-  POSTS: 'fatfx_posts_v4',
-};
-
-// Default initial Master Administrator account if no database profiles exist yet
-export const DEFAULT_ADMIN_PROFILE: UserProfile = {
-  id: 'usr_admin',
-  username: 'admin',
-  fullName: 'Administrator',
-  email: 'admin@fatfx.io',
-  role: 'ADMIN',
-  bio: 'FatFx Master Administrator.',
-  avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-  winRate: 0,
-  totalSignalsCount: 0,
-  totalJournalsCount: 0,
-  isVerified: true,
-  status: 'ACTIVE',
-  permissions: {
-    canPublishSignals: true,
-    canPushJournals: true,
-    canViewAllJournals: true,
-    canModerateSignals: true,
-    maxActiveSignals: 999,
-  },
-  joinedDate: new Date().toISOString().split('T')[0],
-  connections: {}
+  USERS: 'fatfx_users_v5',
+  CURRENT_USER_ID: 'fatfx_current_user_id_v5',
+  JOURNALS: 'fatfx_journals_v5',
+  SIGNALS: 'fatfx_signals_v5',
+  CAPITAL_CONFIGS: 'fatfx_capital_configs_v5',
+  ACTIVITY_LOGS: 'fatfx_activity_logs_v5',
+  SYSTEM_CONFIG: 'fatfx_system_config_v5',
+  POSTS: 'fatfx_posts_v5',
 };
 
 export const DEFAULT_SYSTEM_CONFIG: SystemAccessConfig = {
@@ -56,13 +31,9 @@ export const StorageService = {
   getUsers: (): UserProfile[] => {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.USERS);
-      if (!data) {
-        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify([DEFAULT_ADMIN_PROFILE]));
-        return [DEFAULT_ADMIN_PROFILE];
-      }
-      return JSON.parse(data);
+      return data ? JSON.parse(data) : [];
     } catch {
-      return [DEFAULT_ADMIN_PROFILE];
+      return [];
     }
   },
 
@@ -70,21 +41,20 @@ export const StorageService = {
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   },
 
-  getCurrentUserId: (): string => {
+  getCurrentUserId: (): string | null => {
     try {
-      const id = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
-      if (!id) {
-        localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, DEFAULT_ADMIN_PROFILE.id);
-        return DEFAULT_ADMIN_PROFILE.id;
-      }
-      return id;
+      return localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
     } catch {
-      return DEFAULT_ADMIN_PROFILE.id;
+      return null;
     }
   },
 
-  setCurrentUserId: (id: string): void => {
-    localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, id);
+  setCurrentUserId: (id: string | null): void => {
+    if (id) {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, id);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
+    }
   },
 
   getJournals: (): JournalEntry[] => {
