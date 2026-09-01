@@ -1,5 +1,5 @@
 -- ============================================================================
--- FATFX — SUPABASE PRODUCTION DATABASE SCHEMA & PERMISSIVE ACCESS (RLS)
+-- FATFX — SUPABASE PRODUCTION DATABASE SCHEMA (CLEAN RESET & REBUILD)
 -- ============================================================================
 -- Fully-compliant PostgreSQL / Supabase Schema for FatFx Forex & Crypto Terminal
 -- Clean Production Database: Zero dummy data, full CRUD, dynamic menu access control,
@@ -60,11 +60,28 @@ EXCEPTION
 END $$;
 
 -- ============================================================================
--- 3. TABLES
+-- 3. CLEAN EXISTING TABLES (Prevents column mismatch errors)
+-- ============================================================================
+DROP TABLE IF EXISTS public.post_comments CASCADE;
+DROP TABLE IF EXISTS public.post_likes CASCADE;
+DROP TABLE IF EXISTS public.posts CASCADE;
+DROP TABLE IF EXISTS public.signal_shares CASCADE;
+DROP TABLE IF EXISTS public.signals CASCADE;
+DROP TABLE IF EXISTS public.journal_push_shares CASCADE;
+DROP TABLE IF EXISTS public.journals CASCADE;
+DROP TABLE IF EXISTS public.connections CASCADE;
+DROP TABLE IF EXISTS public.user_permissions CASCADE;
+DROP TABLE IF EXISTS public.profiles CASCADE;
+DROP TABLE IF EXISTS public.month_capital_configs CASCADE;
+DROP TABLE IF EXISTS public.activity_logs CASCADE;
+DROP TABLE IF EXISTS public.system_config CASCADE;
+
+-- ============================================================================
+-- 4. TABLES DEFINITION
 -- ============================================================================
 
 -- PROFILES (Supports direct API signups & Supabase Auth)
-CREATE TABLE IF NOT EXISTS public.profiles (
+CREATE TABLE public.profiles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     username TEXT UNIQUE NOT NULL,
     full_name TEXT NOT NULL,
@@ -82,7 +99,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 );
 
 -- USER PERMISSIONS (Granular RBAC Matrix)
-CREATE TABLE IF NOT EXISTS public.user_permissions (
+CREATE TABLE public.user_permissions (
     user_id UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
     can_publish_signals BOOLEAN DEFAULT TRUE NOT NULL,
     can_push_journals BOOLEAN DEFAULT TRUE NOT NULL,
@@ -93,7 +110,7 @@ CREATE TABLE IF NOT EXISTS public.user_permissions (
 );
 
 -- USER CONNECTIONS (Peer-to-Peer network)
-CREATE TABLE IF NOT EXISTS public.connections (
+CREATE TABLE public.connections (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     requester_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     target_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -106,7 +123,7 @@ CREATE TABLE IF NOT EXISTS public.connections (
 );
 
 -- TRADING JOURNALS
-CREATE TABLE IF NOT EXISTS public.journals (
+CREATE TABLE public.journals (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     currency TEXT NOT NULL,
@@ -129,7 +146,7 @@ CREATE TABLE IF NOT EXISTS public.journals (
 );
 
 -- JOURNAL PUSH SHARES (Direct peer sharing)
-CREATE TABLE IF NOT EXISTS public.journal_push_shares (
+CREATE TABLE public.journal_push_shares (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     journal_id UUID NOT NULL REFERENCES public.journals(id) ON DELETE CASCADE,
     shared_by_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -139,7 +156,7 @@ CREATE TABLE IF NOT EXISTS public.journal_push_shares (
 );
 
 -- SIGNALS
-CREATE TABLE IF NOT EXISTS public.signals (
+CREATE TABLE public.signals (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     author_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     asset TEXT NOT NULL,
@@ -166,7 +183,7 @@ CREATE TABLE IF NOT EXISTS public.signals (
 );
 
 -- SIGNAL SHARES
-CREATE TABLE IF NOT EXISTS public.signal_shares (
+CREATE TABLE public.signal_shares (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     signal_id UUID NOT NULL REFERENCES public.signals(id) ON DELETE CASCADE,
     recipient_username TEXT NOT NULL,
@@ -175,7 +192,7 @@ CREATE TABLE IF NOT EXISTS public.signal_shares (
 );
 
 -- COMMUNITY FEEDS / POSTS
-CREATE TABLE IF NOT EXISTS public.posts (
+CREATE TABLE public.posts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     author_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
@@ -188,7 +205,7 @@ CREATE TABLE IF NOT EXISTS public.posts (
 );
 
 -- POST LIKES
-CREATE TABLE IF NOT EXISTS public.post_likes (
+CREATE TABLE public.post_likes (
     post_id UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
@@ -196,7 +213,7 @@ CREATE TABLE IF NOT EXISTS public.post_likes (
 );
 
 -- POST COMMENTS
-CREATE TABLE IF NOT EXISTS public.post_comments (
+CREATE TABLE public.post_comments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     post_id UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
     author_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -205,7 +222,7 @@ CREATE TABLE IF NOT EXISTS public.post_comments (
 );
 
 -- MONTH CAPITAL CONFIGURATIONS
-CREATE TABLE IF NOT EXISTS public.month_capital_configs (
+CREATE TABLE public.month_capital_configs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     config_year INTEGER NOT NULL,
@@ -217,7 +234,7 @@ CREATE TABLE IF NOT EXISTS public.month_capital_configs (
 );
 
 -- ACTIVITY AUDIT LOGS
-CREATE TABLE IF NOT EXISTS public.activity_logs (
+CREATE TABLE public.activity_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     actor_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     actor_username TEXT NOT NULL,
@@ -229,7 +246,7 @@ CREATE TABLE IF NOT EXISTS public.activity_logs (
 );
 
 -- SYSTEM ACCESS CONFIGURATION (Dynamic Menu Controls)
-CREATE TABLE IF NOT EXISTS public.system_config (
+CREATE TABLE public.system_config (
     id INTEGER PRIMARY KEY DEFAULT 1,
     is_journal_enabled BOOLEAN DEFAULT TRUE NOT NULL,
     is_signals_enabled BOOLEAN DEFAULT TRUE NOT NULL,
@@ -255,7 +272,7 @@ ON CONFLICT (id) DO UPDATE SET
     is_users_enabled = EXCLUDED.is_users_enabled;
 
 -- ============================================================================
--- 4. PERFORMANCE INDEXES
+-- 5. PERFORMANCE INDEXES
 -- ============================================================================
 CREATE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles(username);
 CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
@@ -278,7 +295,7 @@ CREATE INDEX IF NOT EXISTS idx_connections_requester ON public.connections(reque
 CREATE INDEX IF NOT EXISTS idx_connections_target ON public.connections(target_id);
 
 -- ============================================================================
--- 5. AUTOMATED TRIGGERS & FUNCTIONS
+-- 6. AUTOMATED TRIGGERS & FUNCTIONS
 -- ============================================================================
 
 -- Function: Automatic updated_at timestamp refresher
@@ -291,29 +308,16 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Apply updated_at triggers
-DROP TRIGGER IF EXISTS set_profiles_updated_at ON public.profiles;
 CREATE TRIGGER set_profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-DROP TRIGGER IF EXISTS set_connections_updated_at ON public.connections;
 CREATE TRIGGER set_connections_updated_at BEFORE UPDATE ON public.connections FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-DROP TRIGGER IF EXISTS set_journals_updated_at ON public.journals;
 CREATE TRIGGER set_journals_updated_at BEFORE UPDATE ON public.journals FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-DROP TRIGGER IF EXISTS set_signals_updated_at ON public.signals;
 CREATE TRIGGER set_signals_updated_at BEFORE UPDATE ON public.signals FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-DROP TRIGGER IF EXISTS set_posts_updated_at ON public.posts;
 CREATE TRIGGER set_posts_updated_at BEFORE UPDATE ON public.posts FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-DROP TRIGGER IF EXISTS set_month_capital_updated_at ON public.month_capital_configs;
 CREATE TRIGGER set_month_capital_updated_at BEFORE UPDATE ON public.month_capital_configs FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-DROP TRIGGER IF EXISTS set_system_config_updated_at ON public.system_config;
 CREATE TRIGGER set_system_config_updated_at BEFORE UPDATE ON public.system_config FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 -- ============================================================================
--- 6. ROW LEVEL SECURITY (RLS) POLICIES & PERMISSIONS
+-- 7. ROW LEVEL SECURITY (RLS) POLICIES & PERMISSIONS
 -- ============================================================================
 
 -- Enable RLS across all tables
@@ -331,26 +335,7 @@ ALTER TABLE public.month_capital_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_config ENABLE ROW LEVEL SECURITY;
 
--- Drop existing restrictive policies if any
-DROP POLICY IF EXISTS "profiles_select_policy" ON public.profiles;
-DROP POLICY IF EXISTS "profiles_insert_policy" ON public.profiles;
-DROP POLICY IF EXISTS "profiles_update_policy" ON public.profiles;
-DROP POLICY IF EXISTS "profiles_delete_policy" ON public.profiles;
-
-DROP POLICY IF EXISTS "user_permissions_all_policy" ON public.user_permissions;
-DROP POLICY IF EXISTS "connections_all_policy" ON public.connections;
-DROP POLICY IF EXISTS "journals_all_policy" ON public.journals;
-DROP POLICY IF EXISTS "journal_push_shares_all_policy" ON public.journal_push_shares;
-DROP POLICY IF EXISTS "signals_all_policy" ON public.signals;
-DROP POLICY IF EXISTS "signal_shares_all_policy" ON public.signal_shares;
-DROP POLICY IF EXISTS "posts_all_policy" ON public.posts;
-DROP POLICY IF EXISTS "post_likes_all_policy" ON public.post_likes;
-DROP POLICY IF EXISTS "post_comments_all_policy" ON public.post_comments;
-DROP POLICY IF EXISTS "month_capital_configs_all_policy" ON public.month_capital_configs;
-DROP POLICY IF EXISTS "activity_logs_all_policy" ON public.activity_logs;
-DROP POLICY IF EXISTS "system_config_all_policy" ON public.system_config;
-
--- PROFILES (Allow SELECT, INSERT, UPDATE, DELETE for anon and authenticated clients)
+-- PROFILES (Allow full operations for anon and authenticated clients)
 CREATE POLICY "profiles_select_policy" ON public.profiles FOR SELECT TO anon, authenticated USING (TRUE);
 CREATE POLICY "profiles_insert_policy" ON public.profiles FOR INSERT TO anon, authenticated WITH CHECK (TRUE);
 CREATE POLICY "profiles_update_policy" ON public.profiles FOR UPDATE TO anon, authenticated USING (TRUE);
@@ -393,7 +378,7 @@ CREATE POLICY "activity_logs_all_policy" ON public.activity_logs FOR ALL TO anon
 CREATE POLICY "system_config_all_policy" ON public.system_config FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
 -- ============================================================================
--- 7. GRANT PERMISSIONS TO ANON AND AUTHENTICATED ROLES
+-- 8. GRANT ALL PERMISSIONS TO ANON AND AUTHENTICATED ROLES
 -- ============================================================================
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
