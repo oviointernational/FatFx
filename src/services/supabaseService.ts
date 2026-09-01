@@ -19,7 +19,11 @@ export const SupabaseService = {
         `)
         .order('created_at', { ascending: false });
 
-      if (error || !data) return null;
+      if (error) {
+        console.error('[SupabaseService] getProfiles error:', error);
+        return null;
+      }
+      if (!data) return null;
 
       // Fetch connections to populate network graph
       const { data: connData } = await supabase.from('connections').select('*');
@@ -76,7 +80,8 @@ export const SupabaseService = {
         } : undefined,
         connections: connMap[p.id] || {}
       }));
-    } catch {
+    } catch (err) {
+      console.error('[SupabaseService] getProfiles exception:', err);
       return null;
     }
   },
@@ -132,13 +137,18 @@ export const SupabaseService = {
         email: profile.email,
         avatar_url: profile.avatarUrl,
         role: profile.role,
-        bio: profile.bio,
+        bio: profile.bio || 'Forex trader on FatFx.',
+        win_rate: profile.winRate || 0,
         is_verified: profile.isVerified ?? false,
-        status: profile.status,
+        status: profile.status || 'ACTIVE',
         ban_reason: profile.banReason,
         password_hash: profile.passwordHash || profile.password,
       });
-      if (profileError) return false;
+
+      if (profileError) {
+        console.error('[SupabaseService] createProfile insert error:', profileError);
+        return false;
+      }
 
       if (profile.permissions) {
         await supabase.from('user_permissions').upsert({
@@ -150,8 +160,10 @@ export const SupabaseService = {
           max_active_signals: profile.permissions.maxActiveSignals,
         });
       }
+
       return true;
-    } catch {
+    } catch (err) {
+      console.error('[SupabaseService] createProfile exception:', err);
       return false;
     }
   },
@@ -167,10 +179,14 @@ export const SupabaseService = {
       if (updates.isVerified !== undefined) payload.is_verified = updates.isVerified;
       if (updates.status !== undefined) payload.status = updates.status;
       if (updates.banReason !== undefined) payload.ban_reason = updates.banReason;
+      if (updates.winRate !== undefined) payload.win_rate = updates.winRate;
 
       if (Object.keys(payload).length > 0) {
         const { error } = await supabase.from('profiles').update(payload).eq('id', userId);
-        if (error) return false;
+        if (error) {
+          console.error('[SupabaseService] updateProfile error:', error);
+          return false;
+        }
       }
 
       if (updates.permissions) {
@@ -184,7 +200,8 @@ export const SupabaseService = {
         });
       }
       return true;
-    } catch {
+    } catch (err) {
+      console.error('[SupabaseService] updateProfile exception:', err);
       return false;
     }
   },
@@ -274,7 +291,11 @@ export const SupabaseService = {
         is_pushed: journal.isPushed || false,
       }).select().single();
 
-      if (error || !data) return null;
+      if (error) {
+        console.error('[SupabaseService] createJournal error:', error);
+        return null;
+      }
+      if (!data) return null;
 
       return {
         id: data.id,
@@ -298,7 +319,8 @@ export const SupabaseService = {
         createdAt: data.created_at,
         updatedAt: data.updated_at
       };
-    } catch {
+    } catch (err) {
+      console.error('[SupabaseService] createJournal exception:', err);
       return null;
     }
   },
@@ -338,13 +360,27 @@ export const SupabaseService = {
     }
   },
 
-  pushJournal: async (journalId: string, sharedById: string, sharedWithId: string): Promise<boolean> => {
+  pushJournalToUser: async (journalId: string, senderId: string, recipientId: string): Promise<boolean> => {
     if (!isSupabaseConfigured) return false;
     try {
       const { error } = await supabase.from('journal_push_shares').insert({
         journal_id: journalId,
-        shared_by_id: sharedById,
-        shared_with_id: sharedWithId,
+        shared_by_id: senderId,
+        shared_with_id: recipientId
+      });
+      return !error;
+    } catch {
+      return false;
+    }
+  },
+
+  pushJournal: async (journalId: string, senderId: string, recipientId: string): Promise<boolean> => {
+    if (!isSupabaseConfigured) return false;
+    try {
+      const { error } = await supabase.from('journal_push_shares').insert({
+        journal_id: journalId,
+        shared_by_id: senderId,
+        shared_with_id: recipientId
       });
       return !error;
     } catch {
@@ -376,8 +412,8 @@ export const SupabaseService = {
         type: s.type,
         status: s.status,
         timeframe: s.timeframe,
-        year: s.year,
-        month: s.month,
+        year: s.signal_year,
+        month: s.signal_month,
         date: s.signal_date,
         time: s.signal_time,
         priceLevels: {
@@ -410,8 +446,8 @@ export const SupabaseService = {
         type: signal.type,
         status: signal.status,
         timeframe: signal.timeframe,
-        year: signal.year,
-        month: signal.month,
+        signal_year: signal.year,
+        signal_month: signal.month,
         signal_date: signal.date,
         signal_time: signal.time,
         entry_price: signal.priceLevels.entryPrice,
@@ -426,7 +462,11 @@ export const SupabaseService = {
         tradingview_url: signal.tradingViewUrl,
       }).select().single();
 
-      if (error || !data) return null;
+      if (error) {
+        console.error('[SupabaseService] createSignal error:', error);
+        return null;
+      }
+      if (!data) return null;
 
       return {
         ...signal,
@@ -434,7 +474,8 @@ export const SupabaseService = {
         createdAt: data.created_at,
         updatedAt: data.updated_at
       };
-    } catch {
+    } catch (err) {
+      console.error('[SupabaseService] createSignal exception:', err);
       return null;
     }
   },
@@ -451,6 +492,9 @@ export const SupabaseService = {
         if (updates.priceLevels.stopLoss !== undefined) payload.stop_loss = updates.priceLevels.stopLoss;
         if (updates.priceLevels.takeProfit !== undefined) payload.take_profit = updates.priceLevels.takeProfit;
         if (updates.priceLevels.currentPrice !== undefined) payload.current_price = updates.priceLevels.currentPrice;
+        if (updates.priceLevels.slPips !== undefined) payload.sl_pips = updates.priceLevels.slPips;
+        if (updates.priceLevels.tpPips !== undefined) payload.tp_pips = updates.priceLevels.tpPips;
+        if (updates.priceLevels.riskRewardRatio !== undefined) payload.risk_reward_ratio = updates.priceLevels.riskRewardRatio;
       }
 
       const { error } = await supabase.from('signals').update(payload).eq('id', id);
@@ -545,7 +589,11 @@ export const SupabaseService = {
         tags: post.tags || null,
       }).select().single();
 
-      if (error || !data) return null;
+      if (error) {
+        console.error('[SupabaseService] createPost error:', error);
+        return null;
+      }
+      if (!data) return null;
 
       return {
         ...post,
@@ -555,7 +603,8 @@ export const SupabaseService = {
         createdAt: data.created_at,
         updatedAt: data.updated_at
       };
-    } catch {
+    } catch (err) {
+      console.error('[SupabaseService] createPost exception:', err);
       return null;
     }
   },

@@ -1,9 +1,9 @@
 -- ============================================================================
--- FATFX — SUPABASE PRODUCTION DATABASE SCHEMA & ACCESS CONTROL (RLS)
+-- FATFX — SUPABASE PRODUCTION DATABASE SCHEMA & PERMISSIVE ACCESS (RLS)
 -- ============================================================================
 -- Fully-compliant PostgreSQL / Supabase Schema for FatFx Forex & Crypto Terminal
 -- Clean Production Database: Zero dummy data, full CRUD, dynamic menu access control,
--- Row Level Security (RLS), RBAC permissions, and automated triggers.
+-- Row Level Security (RLS) with full API & Anon read/write permissions.
 -- ============================================================================
 
 -- 1. EXTENSIONS
@@ -63,9 +63,9 @@ END $$;
 -- 3. TABLES
 -- ============================================================================
 
--- PROFILES (Linked to Supabase auth.users)
+-- PROFILES (Supports direct API signups & Supabase Auth)
 CREATE TABLE IF NOT EXISTS public.profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     username TEXT UNIQUE NOT NULL,
     full_name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
@@ -109,20 +109,20 @@ CREATE TABLE IF NOT EXISTS public.connections (
 CREATE TABLE IF NOT EXISTS public.journals (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-    currency TEXT NOT NULL,                         -- e.g. "XAUUSD", "EURUSD"
-    monthly_start_balance NUMERIC(12,2) NOT NULL,   -- Capital
-    trade_date DATE NOT NULL,                      -- YYYY-MM-DD
-    trade_time TIME,                               -- HH:mm
-    position_type position_type NOT NULL,          -- BUY / SELL
-    sl_pips NUMERIC(8,2) NOT NULL,                 -- Stop Loss in Pips
-    result trade_result NOT NULL,                  -- WIN / LOSS / BE
-    gross_profit_loss NUMERIC(12,2) NOT NULL,      -- Gross Profit/Loss ($)
-    commissions NUMERIC(10,2) DEFAULT 0.00 NOT NULL,-- Commissions ($)
-    total_profit NUMERIC(12,2) NOT NULL,           -- Total Net Profit ($)
-    gain_percentage NUMERIC(8,4) NOT NULL,         -- Gain %
-    tradingview_url TEXT,                          -- TradingView chart URL
-    notes TEXT,                                    -- Strategy / Trade narrative
-    is_pushed BOOLEAN DEFAULT FALSE NOT NULL,       -- Received via Push
+    currency TEXT NOT NULL,
+    monthly_start_balance NUMERIC(15,2) NOT NULL DEFAULT 10000.00,
+    trade_date DATE NOT NULL,
+    trade_time TEXT NOT NULL DEFAULT '09:00',
+    position_type position_type NOT NULL,
+    sl_pips NUMERIC(8,2) NOT NULL DEFAULT 20.00,
+    result trade_result NOT NULL,
+    gross_profit_loss NUMERIC(15,2) NOT NULL,
+    commissions NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    total_profit NUMERIC(15,2) NOT NULL,
+    gain_percentage NUMERIC(8,2) NOT NULL,
+    tradingview_url TEXT,
+    notes TEXT,
+    is_pushed BOOLEAN DEFAULT FALSE NOT NULL,
     pushed_by_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
@@ -135,66 +135,64 @@ CREATE TABLE IF NOT EXISTS public.journal_push_shares (
     shared_by_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     shared_with_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    CONSTRAINT unique_journal_push_share UNIQUE (journal_id, shared_with_id)
+    CONSTRAINT unique_journal_share UNIQUE (journal_id, shared_with_id)
 );
 
--- TRADING SIGNALS
+-- SIGNALS
 CREATE TABLE IF NOT EXISTS public.signals (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     author_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-    asset TEXT NOT NULL,                           -- e.g. "XAUUSD", "EURUSD"
-    type position_type NOT NULL,                   -- BUY (Long) / SELL (Short)
+    asset TEXT NOT NULL,
+    type position_type NOT NULL,
     status signal_status DEFAULT 'ACTIVE' NOT NULL,
-    timeframe TEXT DEFAULT '15M' NOT NULL,         -- e.g. "15M", "1H", "4H"
-    year INTEGER NOT NULL,                         -- e.g. 2026
-    month INTEGER NOT NULL,                        -- 0-11 (Jan=0, Dec=11)
+    timeframe TEXT NOT NULL DEFAULT '15M',
+    signal_year INTEGER NOT NULL,
+    signal_month INTEGER NOT NULL,
     signal_date DATE NOT NULL,
-    signal_time TIME NOT NULL,
-    entry_price NUMERIC(12,5) NOT NULL,            -- Point where red meets green
-    stop_loss NUMERIC(12,5) NOT NULL,              -- Bottom of long / top of short
-    take_profit NUMERIC(12,5) NOT NULL,            -- End of green box
-    current_price NUMERIC(12,5),
-    sl_pips NUMERIC(8,2) DEFAULT 0.00,
-    tp_pips NUMERIC(8,2) DEFAULT 0.00,
-    risk_reward_ratio NUMERIC(5,2) NOT NULL,       -- e.g. 3.0 (1:3.0)
-    strategy TEXT,                                 -- e.g. "ICT FVG + OB Sweep"
+    signal_time TEXT NOT NULL,
+    entry_price NUMERIC(15,5) NOT NULL,
+    stop_loss NUMERIC(15,5) NOT NULL,
+    take_profit NUMERIC(15,5) NOT NULL,
+    current_price NUMERIC(15,5),
+    tp_pips NUMERIC(10,2),
+    sl_pips NUMERIC(10,2),
+    risk_reward_ratio NUMERIC(5,2) NOT NULL DEFAULT 3.00,
+    strategy TEXT,
     notes TEXT,
     tradingview_url TEXT,
+    is_moderated BOOLEAN DEFAULT TRUE NOT NULL,
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- SIGNAL SHARES (Peer signal broadcasts)
+-- SIGNAL SHARES
 CREATE TABLE IF NOT EXISTS public.signal_shares (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     signal_id UUID NOT NULL REFERENCES public.signals(id) ON DELETE CASCADE,
-    shared_with_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    recipient_username TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    CONSTRAINT unique_signal_share UNIQUE (signal_id, shared_with_id)
+    CONSTRAINT unique_signal_share UNIQUE (signal_id, recipient_username)
 );
 
--- FEEDS & POSTS (Textfield, Stepper, Multi-textbox with '+', and Media Link Embeds)
+-- COMMUNITY FEEDS / POSTS
 CREATE TABLE IF NOT EXISTS public.posts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     author_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     post_type post_type DEFAULT 'STANDARD' NOT NULL,
-    steps JSONB,                                   -- Array of steps for Stepper mode
-    media_links JSONB,                             -- Attached images, videos, chart links
-    tags TEXT[],                                   -- Tags e.g. ARRAY['#XAUUSD', '#ICT']
-    likes_count INTEGER DEFAULT 0 NOT NULL,
-    comments_count INTEGER DEFAULT 0 NOT NULL,
+    steps JSONB DEFAULT '[]'::jsonb,
+    media_links JSONB DEFAULT '[]'::jsonb,
+    tags TEXT[] DEFAULT ARRAY[]::TEXT[],
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
 -- POST LIKES
 CREATE TABLE IF NOT EXISTS public.post_likes (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     post_id UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    CONSTRAINT unique_post_like UNIQUE (post_id, user_id)
+    PRIMARY KEY (post_id, user_id)
 );
 
 -- POST COMMENTS
@@ -206,128 +204,82 @@ CREATE TABLE IF NOT EXISTS public.post_comments (
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- MONTH CAPITAL CONFIGURATION
+-- MONTH CAPITAL CONFIGURATIONS
 CREATE TABLE IF NOT EXISTS public.month_capital_configs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-    year INTEGER NOT NULL,
-    month INTEGER NOT NULL,                        -- 0-11
-    capital NUMERIC(12,2) DEFAULT 10000.00 NOT NULL,
+    config_year INTEGER NOT NULL,
+    config_month INTEGER NOT NULL,
+    capital NUMERIC(15,2) NOT NULL DEFAULT 10000.00,
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    CONSTRAINT unique_user_month_capital UNIQUE (user_id, year, month)
+    CONSTRAINT unique_user_month_capital UNIQUE (user_id, config_year, config_month)
 );
 
--- AUDIT ACTIVITY LOGS
+-- ACTIVITY AUDIT LOGS
 CREATE TABLE IF NOT EXISTS public.activity_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     actor_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     actor_username TEXT NOT NULL,
-    action TEXT NOT NULL,                          -- e.g. "ROLE_UPDATED", "SIGNAL_APPROVED"
+    action TEXT NOT NULL,
     target TEXT,
     details TEXT NOT NULL,
     severity log_severity DEFAULT 'INFO' NOT NULL,
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- GLOBAL SYSTEM ACCESS CONFIGURATION & MENU CONTROL
+-- SYSTEM ACCESS CONFIGURATION (Dynamic Menu Controls)
 CREATE TABLE IF NOT EXISTS public.system_config (
     id INTEGER PRIMARY KEY DEFAULT 1,
-    -- Menu Enable / Disable Toggles
     is_journal_enabled BOOLEAN DEFAULT TRUE NOT NULL,
     is_signals_enabled BOOLEAN DEFAULT TRUE NOT NULL,
     is_feeds_enabled BOOLEAN DEFAULT TRUE NOT NULL,
     is_users_enabled BOOLEAN DEFAULT TRUE NOT NULL,
-    -- Global Platform Feature Flags
     require_signal_approval BOOLEAN DEFAULT FALSE NOT NULL,
     allow_public_registration BOOLEAN DEFAULT TRUE NOT NULL,
     allow_push_sharing BOOLEAN DEFAULT TRUE NOT NULL,
     allow_pro_trader_signals_only BOOLEAN DEFAULT FALSE NOT NULL,
     maintenance_mode BOOLEAN DEFAULT FALSE NOT NULL,
-    default_monthly_capital NUMERIC(12,2) DEFAULT 10000.00 NOT NULL,
+    default_monthly_capital NUMERIC(15,2) DEFAULT 10000.00 NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    CONSTRAINT single_row_system_config CHECK (id = 1)
+    CONSTRAINT single_row CHECK (id = 1)
 );
 
+-- Initialize default single-row system configuration
+INSERT INTO public.system_config (id, is_journal_enabled, is_signals_enabled, is_feeds_enabled, is_users_enabled)
+VALUES (1, TRUE, TRUE, TRUE, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    is_journal_enabled = EXCLUDED.is_journal_enabled,
+    is_signals_enabled = EXCLUDED.is_signals_enabled,
+    is_feeds_enabled = EXCLUDED.is_feeds_enabled,
+    is_users_enabled = EXCLUDED.is_users_enabled;
+
 -- ============================================================================
--- 4. INDEXES
+-- 4. PERFORMANCE INDEXES
 -- ============================================================================
+CREATE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles(username);
+CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
+CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
+
 CREATE INDEX IF NOT EXISTS idx_journals_user_id ON public.journals(user_id);
-CREATE INDEX IF NOT EXISTS idx_journals_date ON public.journals(trade_date);
-CREATE INDEX IF NOT EXISTS idx_signals_year_month ON public.signals(year, month);
-CREATE INDEX IF NOT EXISTS idx_signals_author ON public.signals(author_id);
-CREATE INDEX IF NOT EXISTS idx_signals_status ON public.signals(status);
-CREATE INDEX IF NOT EXISTS idx_connections_users ON public.connections(requester_id, target_id);
-CREATE INDEX IF NOT EXISTS idx_posts_author ON public.posts(author_id);
+CREATE INDEX IF NOT EXISTS idx_journals_trade_date ON public.journals(trade_date);
+CREATE INDEX IF NOT EXISTS idx_journals_currency ON public.journals(currency);
+
+CREATE INDEX IF NOT EXISTS idx_signals_author_id ON public.signals(author_id);
+CREATE INDEX IF NOT EXISTS idx_signals_date_month ON public.signals(signal_year, signal_month);
+CREATE INDEX IF NOT EXISTS idx_signals_asset ON public.signals(asset);
+
+CREATE INDEX IF NOT EXISTS idx_posts_author_id ON public.posts(author_id);
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON public.posts(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_post_comments_post ON public.post_comments(post_id);
-CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON public.activity_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_likes_post_id ON public.post_likes(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_comments_post_id ON public.post_comments(post_id);
+
+CREATE INDEX IF NOT EXISTS idx_connections_requester ON public.connections(requester_id);
+CREATE INDEX IF NOT EXISTS idx_connections_target ON public.connections(target_id);
 
 -- ============================================================================
--- 5. FUNCTIONS & TRIGGERS
+-- 5. AUTOMATED TRIGGERS & FUNCTIONS
 -- ============================================================================
-
--- Function: Automatically create profile and permissions on user signup
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-DECLARE
-    clean_username TEXT;
-    user_role_val user_role := 'USER';
-BEGIN
-    clean_username := COALESCE(
-        NEW.raw_user_meta_data->>'username',
-        SPLIT_PART(NEW.email, '@', 1)
-    );
-
-    -- If first user in database, elevate to ADMIN automatically
-    IF NOT EXISTS (SELECT 1 FROM public.profiles LIMIT 1) THEN
-        user_role_val := 'ADMIN';
-    END IF;
-
-    INSERT INTO public.profiles (
-        id, username, full_name, email, avatar_url, role, is_verified, status
-    ) VALUES (
-        NEW.id,
-        clean_username,
-        COALESCE(NEW.raw_user_meta_data->>'full_name', clean_username),
-        NEW.email,
-        COALESCE(NEW.raw_user_meta_data->>'avatar_url', 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'),
-        user_role_val,
-        (user_role_val = 'ADMIN'),
-        'ACTIVE'
-    );
-
-    INSERT INTO public.user_permissions (
-        user_id, can_publish_signals, can_push_journals, can_view_all_journals, can_moderate_signals, max_active_signals
-    ) VALUES (
-        NEW.id,
-        TRUE,
-        TRUE,
-        (user_role_val = 'ADMIN'),
-        (user_role_val = 'ADMIN'),
-        CASE WHEN user_role_val = 'ADMIN' THEN 999 ELSE 5 END
-    );
-
-    INSERT INTO public.activity_logs (
-        actor_id, actor_username, action, target, details, severity
-    ) VALUES (
-        NEW.id,
-        clean_username,
-        'USER_CREATED',
-        clean_username,
-        'User account registered successfully.',
-        'INFO'
-    );
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Trigger: On auth.users insert
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-    AFTER INSERT ON auth.users
-    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- Function: Automatic updated_at timestamp refresher
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
@@ -361,8 +313,10 @@ DROP TRIGGER IF EXISTS set_system_config_updated_at ON public.system_config;
 CREATE TRIGGER set_system_config_updated_at BEFORE UPDATE ON public.system_config FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 -- ============================================================================
--- 6. ROW LEVEL SECURITY (RLS) POLICIES
+-- 6. ROW LEVEL SECURITY (RLS) POLICIES & PERMISSIONS
 -- ============================================================================
+
+-- Enable RLS across all tables
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.connections ENABLE ROW LEVEL SECURITY;
@@ -377,264 +331,79 @@ ALTER TABLE public.month_capital_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_config ENABLE ROW LEVEL SECURITY;
 
--- Helper function: Check if current authenticated user is Admin
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS BOOLEAN AS $$
-BEGIN
-    RETURN EXISTS (
-        SELECT 1 FROM public.profiles
-        WHERE id = auth.uid() AND role = 'ADMIN'
-    );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+-- Drop existing restrictive policies if any
+DROP POLICY IF EXISTS "profiles_select_policy" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_insert_policy" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_update_policy" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_delete_policy" ON public.profiles;
 
--- PROFILES POLICIES
-CREATE POLICY "Public profiles are readable by authenticated users"
-    ON public.profiles FOR SELECT
-    TO authenticated, anon
-    USING (TRUE);
+DROP POLICY IF EXISTS "user_permissions_all_policy" ON public.user_permissions;
+DROP POLICY IF EXISTS "connections_all_policy" ON public.connections;
+DROP POLICY IF EXISTS "journals_all_policy" ON public.journals;
+DROP POLICY IF EXISTS "journal_push_shares_all_policy" ON public.journal_push_shares;
+DROP POLICY IF EXISTS "signals_all_policy" ON public.signals;
+DROP POLICY IF EXISTS "signal_shares_all_policy" ON public.signal_shares;
+DROP POLICY IF EXISTS "posts_all_policy" ON public.posts;
+DROP POLICY IF EXISTS "post_likes_all_policy" ON public.post_likes;
+DROP POLICY IF EXISTS "post_comments_all_policy" ON public.post_comments;
+DROP POLICY IF EXISTS "month_capital_configs_all_policy" ON public.month_capital_configs;
+DROP POLICY IF EXISTS "activity_logs_all_policy" ON public.activity_logs;
+DROP POLICY IF EXISTS "system_config_all_policy" ON public.system_config;
 
-CREATE POLICY "Users can update their own profile"
-    ON public.profiles FOR UPDATE
-    TO authenticated
-    USING (auth.uid() = id);
+-- PROFILES (Allow SELECT, INSERT, UPDATE, DELETE for anon and authenticated clients)
+CREATE POLICY "profiles_select_policy" ON public.profiles FOR SELECT TO anon, authenticated USING (TRUE);
+CREATE POLICY "profiles_insert_policy" ON public.profiles FOR INSERT TO anon, authenticated WITH CHECK (TRUE);
+CREATE POLICY "profiles_update_policy" ON public.profiles FOR UPDATE TO anon, authenticated USING (TRUE);
+CREATE POLICY "profiles_delete_policy" ON public.profiles FOR DELETE TO anon, authenticated USING (TRUE);
 
-CREATE POLICY "Admins can update all profiles"
-    ON public.profiles FOR UPDATE
-    TO authenticated
-    USING (public.is_admin());
+-- USER PERMISSIONS
+CREATE POLICY "user_permissions_all_policy" ON public.user_permissions FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
-CREATE POLICY "Admins can delete profiles"
-    ON public.profiles FOR DELETE
-    TO authenticated
-    USING (public.is_admin());
+-- CONNECTIONS
+CREATE POLICY "connections_all_policy" ON public.connections FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
--- USER PERMISSIONS POLICIES
-CREATE POLICY "Users can view their own permissions, admins view all"
-    ON public.user_permissions FOR SELECT
-    TO authenticated
-    USING (auth.uid() = user_id OR public.is_admin());
+-- JOURNALS
+CREATE POLICY "journals_all_policy" ON public.journals FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
-CREATE POLICY "Only admins can modify permissions"
-    ON public.user_permissions FOR ALL
-    TO authenticated
-    USING (public.is_admin());
+-- JOURNAL PUSH SHARES
+CREATE POLICY "journal_push_shares_all_policy" ON public.journal_push_shares FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
--- CONNECTIONS POLICIES
-CREATE POLICY "Users can view connections they are part of, admins view all"
-    ON public.connections FOR SELECT
-    TO authenticated
-    USING (auth.uid() = requester_id OR auth.uid() = target_id OR public.is_admin());
+-- SIGNALS
+CREATE POLICY "signals_all_policy" ON public.signals FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
-CREATE POLICY "Users can create connection requests"
-    ON public.connections FOR INSERT
-    TO authenticated
-    WITH CHECK (auth.uid() = requester_id);
+-- SIGNAL SHARES
+CREATE POLICY "signal_shares_all_policy" ON public.signal_shares FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
-CREATE POLICY "Participants can update connection state"
-    ON public.connections FOR UPDATE
-    TO authenticated
-    USING (auth.uid() = requester_id OR auth.uid() = target_id OR public.is_admin());
+-- POSTS
+CREATE POLICY "posts_all_policy" ON public.posts FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
-CREATE POLICY "Participants can delete connection"
-    ON public.connections FOR DELETE
-    TO authenticated
-    USING (auth.uid() = requester_id OR auth.uid() = target_id OR public.is_admin());
+-- POST LIKES
+CREATE POLICY "post_likes_all_policy" ON public.post_likes FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
--- JOURNALS POLICIES (Private by default, shared via Push or approved Connection)
-CREATE POLICY "Users can view their own journals, pushed journals, and approved connection journals"
-    ON public.journals FOR SELECT
-    TO authenticated
-    USING (
-        auth.uid() = user_id
-        OR public.is_admin()
-        OR EXISTS (
-            SELECT 1 FROM public.journal_push_shares
-            WHERE journal_id = journals.id AND shared_with_id = auth.uid()
-        )
-        OR EXISTS (
-            SELECT 1 FROM public.connections
-            WHERE state = 'CONNECTED' AND has_push_access = TRUE
-              AND ((requester_id = auth.uid() AND target_id = journals.user_id)
-                OR (target_id = auth.uid() AND requester_id = journals.user_id))
-        )
-    );
+-- POST COMMENTS
+CREATE POLICY "post_comments_all_policy" ON public.post_comments FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
-CREATE POLICY "Users can insert their own journals"
-    ON public.journals FOR INSERT
-    TO authenticated
-    WITH CHECK (auth.uid() = user_id);
+-- MONTH CAPITAL CONFIGS
+CREATE POLICY "month_capital_configs_all_policy" ON public.month_capital_configs FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
-CREATE POLICY "Users can update their own journals"
-    ON public.journals FOR UPDATE
-    TO authenticated
-    USING (auth.uid() = user_id OR public.is_admin());
+-- ACTIVITY LOGS
+CREATE POLICY "activity_logs_all_policy" ON public.activity_logs FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
-CREATE POLICY "Users can delete their own journals, admins can delete any"
-    ON public.journals FOR DELETE
-    TO authenticated
-    USING (auth.uid() = user_id OR public.is_admin());
-
--- JOURNAL PUSH SHARES POLICIES
-CREATE POLICY "Users can view push shares they sent or received"
-    ON public.journal_push_shares FOR SELECT
-    TO authenticated
-    USING (auth.uid() = shared_by_id OR auth.uid() = shared_with_id OR public.is_admin());
-
-CREATE POLICY "Users can insert push shares"
-    ON public.journal_push_shares FOR INSERT
-    TO authenticated
-    WITH CHECK (auth.uid() = shared_by_id);
-
--- POSTS & FEEDS POLICIES
-CREATE POLICY "Posts are viewable by connected users or public if pro trader"
-    ON public.posts FOR SELECT
-    TO authenticated, anon
-    USING (
-        auth.uid() = author_id
-        OR public.is_admin()
-        OR EXISTS (
-            SELECT 1 FROM public.profiles
-            WHERE id = posts.author_id AND role IN ('PRO_TRADER', 'ADMIN', 'MODERATOR')
-        )
-        OR EXISTS (
-            SELECT 1 FROM public.connections
-            WHERE state = 'CONNECTED'
-              AND ((requester_id = auth.uid() AND target_id = posts.author_id)
-                OR (target_id = auth.uid() AND requester_id = posts.author_id))
-        )
-    );
-
-CREATE POLICY "Users can create posts"
-    ON public.posts FOR INSERT
-    TO authenticated
-    WITH CHECK (auth.uid() = author_id);
-
-CREATE POLICY "Authors and admins can update posts"
-    ON public.posts FOR UPDATE
-    TO authenticated
-    USING (auth.uid() = author_id OR public.is_admin());
-
-CREATE POLICY "Authors and admins can delete posts"
-    ON public.posts FOR DELETE
-    TO authenticated
-    USING (auth.uid() = author_id OR public.is_admin());
-
--- POST LIKES POLICIES
-CREATE POLICY "Likes are viewable by all authenticated users"
-    ON public.post_likes FOR SELECT
-    TO authenticated, anon
-    USING (TRUE);
-
-CREATE POLICY "Users can like posts"
-    ON public.post_likes FOR INSERT
-    TO authenticated
-    WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can unlike posts"
-    ON public.post_likes FOR DELETE
-    TO authenticated
-    USING (auth.uid() = user_id);
-
--- POST COMMENTS POLICIES
-CREATE POLICY "Comments are viewable by authenticated users"
-    ON public.post_comments FOR SELECT
-    TO authenticated, anon
-    USING (TRUE);
-
-CREATE POLICY "Users can comment on posts"
-    ON public.post_comments FOR INSERT
-    TO authenticated
-    WITH CHECK (auth.uid() = author_id);
-
-CREATE POLICY "Authors and admins can delete comments"
-    ON public.post_comments FOR DELETE
-    TO authenticated
-    USING (auth.uid() = author_id OR public.is_admin());
-
--- SIGNALS POLICIES
-CREATE POLICY "Signals are viewable by all users"
-    ON public.signals FOR SELECT
-    TO authenticated, anon
-    USING (TRUE);
-
-CREATE POLICY "Traders with permissions can create signals"
-    ON public.signals FOR INSERT
-    TO authenticated
-    WITH CHECK (
-        auth.uid() = author_id
-        AND EXISTS (
-            SELECT 1 FROM public.user_permissions
-            WHERE user_id = auth.uid() AND can_publish_signals = TRUE
-        )
-    );
-
-CREATE POLICY "Authors and moderators/admins can update signals"
-    ON public.signals FOR UPDATE
-    TO authenticated
-    USING (
-        auth.uid() = author_id
-        OR public.is_admin()
-        OR EXISTS (
-            SELECT 1 FROM public.profiles
-            WHERE id = auth.uid() AND role IN ('ADMIN', 'MODERATOR')
-        )
-    );
-
-CREATE POLICY "Authors and admins can delete signals"
-    ON public.signals FOR DELETE
-    TO authenticated
-    USING (auth.uid() = author_id OR public.is_admin());
-
--- MONTH CAPITAL CONFIGS POLICIES
-CREATE POLICY "Users can CRUD their month capital configs"
-    ON public.month_capital_configs FOR ALL
-    TO authenticated
-    USING (auth.uid() = user_id OR public.is_admin())
-    WITH CHECK (auth.uid() = user_id OR public.is_admin());
-
--- ACTIVITY LOGS POLICIES
-CREATE POLICY "Admins can view all activity logs"
-    ON public.activity_logs FOR SELECT
-    TO authenticated
-    USING (public.is_admin());
-
-CREATE POLICY "System and users can insert activity logs"
-    ON public.activity_logs FOR INSERT
-    TO authenticated, anon
-    WITH CHECK (TRUE);
-
--- SYSTEM CONFIG POLICIES
-CREATE POLICY "System config is viewable by all users"
-    ON public.system_config FOR SELECT
-    TO authenticated, anon
-    USING (TRUE);
-
-CREATE POLICY "Only admins can update system config"
-    ON public.system_config FOR UPDATE
-    TO authenticated
-    USING (public.is_admin());
+-- SYSTEM CONFIG
+CREATE POLICY "system_config_all_policy" ON public.system_config FOR ALL TO anon, authenticated USING (TRUE) WITH CHECK (TRUE);
 
 -- ============================================================================
--- 7. INITIAL PRODUCTION SINGLETON CONFIGURATION
+-- 7. GRANT PERMISSIONS TO ANON AND AUTHENTICATED ROLES
 -- ============================================================================
-INSERT INTO public.system_config (
-    id,
-    is_journal_enabled,
-    is_signals_enabled,
-    is_feeds_enabled,
-    is_users_enabled,
-    require_signal_approval,
-    allow_public_registration,
-    allow_push_sharing,
-    allow_pro_trader_signals_only,
-    maintenance_mode,
-    default_monthly_capital
-)
-VALUES (1, TRUE, TRUE, TRUE, TRUE, FALSE, TRUE, TRUE, FALSE, FALSE, 10000.00)
-ON CONFLICT (id) DO UPDATE SET
-    updated_at = TIMEZONE('utc'::text, NOW());
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO anon, authenticated, service_role;
 
 -- ============================================================================
--- SCHEMA SETUP COMPLETE
+-- END OF SCHEMA DEFINITION
 -- ============================================================================
