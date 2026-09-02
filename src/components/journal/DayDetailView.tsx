@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Plus, Edit2, Trash2, Send, ExternalLink, TrendingUp, TrendingDown, Minus, Clock } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Trash2, Send, ExternalLink, TrendingUp, TrendingDown, Minus, Clock, ShieldCheck, AlertTriangle, Image } from 'lucide-react';
 import { JournalEntry } from '../../types/journal';
 import { useJournal } from '../../context/JournalContext';
 import { useAuth } from '../../context/AuthContext';
@@ -26,9 +26,10 @@ export const DayDetailView: React.FC<DayDetailViewProps> = ({ date, entries, onB
   const parsed = parseDateString(date);
   const dayLabel = `${parsed.day} ${MONTH_NAMES[parsed.month]} ${parsed.year}`;
 
-  const totalPnL = entries.reduce((sum, e) => sum + e.totalProfit, 0);
-  const wins = entries.filter(e => e.result === 'WIN').length;
-  const losses = entries.filter(e => e.result === 'LOSS').length;
+  const publishedEntries = entries.filter(e => e.publishStatus === 'PUBLISHED');
+  const totalPnL = publishedEntries.reduce((sum, e) => sum + (e.netPnL !== undefined ? e.netPnL : (e.totalProfit ?? 0)), 0);
+  const wins = publishedEntries.filter(e => (e.netPnL ?? e.totalProfit ?? 0) > 0).length;
+  const losses = publishedEntries.filter(e => (e.netPnL ?? e.totalProfit ?? 0) < 0).length;
 
   const handleDelete = (id: string) => {
     if (deleteConfirm === id) {
@@ -69,11 +70,20 @@ export const DayDetailView: React.FC<DayDetailViewProps> = ({ date, entries, onB
           <div className="mt-3 flex gap-3">
             <div className={clsx(
               'flex-1 rounded-xl px-3 py-2 flex items-center justify-between',
-              totalPnL >= 0 ? 'bg-fatfx-win-bg border border-fatfx-win-border' : 'bg-fatfx-loss-bg border border-fatfx-loss-border'
+              publishedEntries.length > 0
+                ? totalPnL >= 0
+                  ? 'bg-fatfx-win-bg border border-fatfx-win-border'
+                  : 'bg-fatfx-loss-bg border border-fatfx-loss-border'
+                : 'bg-slate-100 border border-slate-200'
             )}>
-              <span className="text-xs text-slate-600 font-medium">Day PnL</span>
-              <span className={clsx('font-bold text-sm font-mono', totalPnL >= 0 ? 'text-fatfx-win-text' : 'text-fatfx-loss-text')}>
-                {formatSignedCurrency(totalPnL)}
+              <span className="text-xs text-slate-600 font-medium">Published PnL</span>
+              <span className={clsx(
+                'font-bold text-sm font-mono',
+                publishedEntries.length > 0
+                  ? totalPnL >= 0 ? 'text-fatfx-win-text' : 'text-fatfx-loss-text'
+                  : 'text-slate-500'
+              )}>
+                {publishedEntries.length > 0 ? formatSignedCurrency(totalPnL) : 'Drafts only'}
               </span>
             </div>
             <div className="flex gap-2">
@@ -108,123 +118,235 @@ export const DayDetailView: React.FC<DayDetailViewProps> = ({ date, entries, onB
             )}
           </div>
         ) : (
-          entries.map(entry => (
-            <div
-              key={entry.id}
-              className={clsx(
-                'bg-white rounded-2xl border shadow-subtle overflow-hidden transition-all hover:shadow-futuristic',
-                entry.result === 'WIN' ? 'border-fatfx-win-border'
-                  : entry.result === 'LOSS' ? 'border-fatfx-loss-border'
-                  : 'border-fatfx-border'
-              )}
-            >
-              {/* Card header */}
-              <div className={clsx(
-                'px-4 py-2.5 flex items-center justify-between',
-                entry.result === 'WIN' ? 'bg-fatfx-win-bg' : entry.result === 'LOSS' ? 'bg-fatfx-loss-bg' : 'bg-slate-50'
-              )}>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={clsx('text-xs font-bold px-2 py-0.5 rounded-lg', entry.positionType === 'BUY' ? 'bg-fatfx-win-solid text-white' : 'bg-fatfx-loss-solid text-white')}>
-                    {entry.positionType}
-                  </span>
-                  <span className="text-sm font-bold text-slate-900 font-mono">{entry.currency}</span>
-                  {entry.time && (
-                    <span className="flex items-center gap-1 text-[10px] text-slate-500">
-                      <Clock className="w-2.5 h-2.5" />{entry.time}
-                    </span>
-                  )}
-                  {entry.isPushed && entry.pushedBy && (
-                    <span className="text-[10px] bg-fatfx-teal-100 text-fatfx-teal-700 px-1.5 py-0.5 rounded-full font-medium">
-                      from @{entry.pushedBy}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {entry.result === 'WIN' ? <TrendingUp className="w-4 h-4 text-fatfx-win-text" />
-                    : entry.result === 'LOSS' ? <TrendingDown className="w-4 h-4 text-fatfx-loss-text" />
-                    : <Minus className="w-4 h-4 text-slate-500" />}
-                  <span className={clsx('text-xs font-bold', entry.result === 'WIN' ? 'text-fatfx-win-text' : entry.result === 'LOSS' ? 'text-fatfx-loss-text' : 'text-slate-600')}>
-                    {entry.result}
-                  </span>
-                </div>
-              </div>
+          entries.map(entry => {
+            const isPublished = entry.publishStatus === 'PUBLISHED';
+            const netProfit = entry.netPnL !== undefined ? entry.netPnL : (entry.totalProfit ?? 0);
+            const isWin = isPublished && netProfit > 0;
+            const isLoss = isPublished && netProfit < 0;
+            const direction = entry.direction || (entry.positionType === 'SELL' ? 'SHORT' : 'LONG');
 
-              {/* Card body */}
-              <div className="px-4 py-3">
-                <div className="grid grid-cols-3 gap-3 mb-3">
-                  <div>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Gross P/L</p>
-                    <p className={clsx('text-sm font-bold font-mono', entry.grossProfitLoss >= 0 ? 'text-fatfx-win-text' : 'text-fatfx-loss-text')}>{formatSignedCurrency(entry.grossProfitLoss)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Commission</p>
-                    <p className="text-sm font-semibold text-slate-700 font-mono">-${entry.commissions.toFixed(2)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Net Profit</p>
-                    <p className={clsx('text-sm font-bold font-mono', entry.totalProfit >= 0 ? 'text-fatfx-win-text' : 'text-fatfx-loss-text')}>{formatSignedCurrency(entry.totalProfit)}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-3 mb-3">
-                  <div>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">SL Pips</p>
-                    <p className="text-sm font-semibold text-slate-700">{entry.slPips}p</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Gain %</p>
-                    <p className={clsx('text-sm font-bold font-mono', entry.gainPercentage >= 0 ? 'text-fatfx-win-text' : 'text-fatfx-loss-text')}>{formatPercent(entry.gainPercentage)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Capital</p>
-                    <p className="text-sm font-semibold text-slate-700 font-mono">${entry.monthlyStartBalance.toLocaleString()}</p>
-                  </div>
-                </div>
-
-                {entry.notes && (
-                  <p className="text-xs text-slate-500 leading-relaxed bg-fatfx-surface-subtle rounded-lg px-3 py-2 mb-3 border border-fatfx-border">
-                    {entry.notes}
-                  </p>
+            return (
+              <div
+                key={entry.id}
+                className={clsx(
+                  'bg-white rounded-2xl border shadow-subtle overflow-hidden transition-all hover:shadow-futuristic',
+                  isWin ? 'border-fatfx-win-border'
+                    : isLoss ? 'border-fatfx-loss-border'
+                    : isPublished ? 'border-slate-200'
+                    : 'border-slate-300 bg-slate-50/50'
                 )}
+              >
+                {/* Card Header */}
+                <div className={clsx(
+                  'px-4 py-2.5 flex items-center justify-between border-b',
+                  isWin ? 'bg-fatfx-win-bg border-fatfx-win-border'
+                    : isLoss ? 'bg-fatfx-loss-bg border-fatfx-loss-border'
+                    : 'bg-slate-100 border-slate-200'
+                )}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={clsx(
+                      'text-xs font-bold px-2 py-0.5 rounded-lg shadow-sm',
+                      direction === 'LONG' ? 'bg-fatfx-win-solid text-white' : 'bg-fatfx-loss-solid text-white'
+                    )}>
+                      {direction}
+                    </span>
+                    <span className="text-sm font-bold text-slate-900 font-mono">{entry.currency}</span>
+                    {entry.time && (
+                      <span className="flex items-center gap-1 text-[10px] text-slate-500 font-mono">
+                        <Clock className="w-2.5 h-2.5" />{entry.time}
+                      </span>
+                    )}
+                    {isPublished ? (
+                      <span className="text-[10px] bg-fatfx-win-bg text-fatfx-win-text border border-fatfx-win-border px-1.5 py-0.5 rounded-full font-bold">
+                        PUBLISHED
+                      </span>
+                    ) : (
+                      <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded-full font-bold">
+                        DRAFT
+                      </span>
+                    )}
+                    {entry.isPushed && entry.pushedBy && (
+                      <span className="text-[10px] bg-fatfx-teal-100 text-fatfx-teal-700 px-1.5 py-0.5 rounded-full font-medium">
+                        from @{entry.pushedBy}
+                      </span>
+                    )}
+                  </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
-                  {entry.tradingViewUrl && (
-                    <a href={entry.tradingViewUrl} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-[11px] font-medium text-fatfx-teal-600 hover:text-fatfx-teal-700 bg-fatfx-teal-50 hover:bg-fatfx-teal-100 px-2.5 py-1.5 rounded-lg transition-all border border-fatfx-teal-100">
-                      <ExternalLink className="w-3 h-3" />TradingView
-                    </a>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isPublished ? (
+                      isWin ? (
+                        <div className="flex items-center gap-1 text-fatfx-win-text font-bold text-xs">
+                          <TrendingUp className="w-4 h-4" />
+                          <span>+{formatSignedCurrency(netProfit)}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 text-fatfx-loss-text font-bold text-xs">
+                          <TrendingDown className="w-4 h-4" />
+                          <span>{formatSignedCurrency(netProfit)}</span>
+                        </div>
+                      )
+                    ) : (
+                      <span className="text-xs text-slate-500 font-medium">In Play / Draft</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Card Body with Detailed Metrics */}
+                <div className="px-4 py-3 space-y-3">
+                  {/* Grid 1: Strategy, Position Size, Market Condition */}
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Strategy</p>
+                      <p className="font-semibold text-slate-800 truncate">{entry.strategy || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Size (Lots)</p>
+                      <p className="font-semibold text-slate-800 font-mono">{entry.positionSize || 0.1}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Market Condition</p>
+                      <p className="font-semibold text-slate-800">{entry.marketCondition || 'TREND'}</p>
+                    </div>
+                  </div>
+
+                  {/* Grid 2: Entry Price, Stop Loss, Take Profit, Exit Price */}
+                  <div className="grid grid-cols-4 gap-2 text-xs bg-slate-50 p-2 rounded-xl border border-fatfx-border">
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Entry Price</p>
+                      <p className="font-bold text-slate-900 font-mono">{entry.entryPrice || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Stop Loss</p>
+                      <p className="font-bold text-red-600 font-mono">{entry.stopLossLevel || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Take Profit</p>
+                      <p className="font-bold text-fatfx-teal-600 font-mono">{entry.takeProfitLevel || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Exit Price</p>
+                      <p className="font-bold text-slate-900 font-mono">{entry.exitPrice || '—'}</p>
+                    </div>
+                  </div>
+
+                  {/* Grid 3: Fees, R-Multiple, Discipline/Compliance, Emotional State */}
+                  <div className="grid grid-cols-4 gap-2 text-xs">
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Fees ($)</p>
+                      <p className="font-semibold text-slate-700 font-mono">${(entry.fees || entry.commissions || 0).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">R-Multiple</p>
+                      <p className="font-bold text-slate-900 font-mono">{entry.rMultiple ? `${entry.rMultiple}R` : '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Discipline</p>
+                      <p className="font-bold text-fatfx-teal-700">{entry.ruleCompliance ? `${entry.ruleCompliance}/10` : '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Emotional State</p>
+                      <p className="font-semibold text-slate-800 truncate">{entry.emotionalState || '—'}</p>
+                    </div>
+                  </div>
+
+                  {/* Mistakes Made */}
+                  {entry.mistakesMade && (
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-start gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold">Mistakes / Deviations: </span>
+                        <span>{entry.mistakesMade}</span>
+                      </div>
+                    </div>
                   )}
-                  {canEditDelete(entry) && (
-                    <>
-                      <button onClick={() => { setEditEntry(entry); setShowModal(true); }}
-                        className="flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-all">
-                        <Edit2 className="w-3 h-3" />Edit
-                      </button>
-                      <button onClick={() => setPushJournalId(entry.id)}
-                        className="flex items-center gap-1 text-[11px] font-medium text-fatfx-teal-600 hover:text-fatfx-teal-700 bg-fatfx-teal-50 hover:bg-fatfx-teal-100 px-2.5 py-1.5 rounded-lg transition-all border border-fatfx-teal-100">
-                        <Send className="w-3 h-3" />Push
-                        {entry.pushedTo && entry.pushedTo.length > 0 && (
-                          <span className="ml-0.5 text-[9px] bg-fatfx-teal-500 text-white rounded-full px-1.5">{entry.pushedTo.length}</span>
+
+                  {/* Notes */}
+                  {entry.notes && (
+                    <p className="text-xs text-slate-500 leading-relaxed bg-fatfx-surface-subtle rounded-lg px-3 py-2 border border-fatfx-border">
+                      {entry.notes}
+                    </p>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-2 flex-wrap pt-1">
+                    {(entry.setupScreenshotUrl || entry.tradingViewUrl) && (
+                      <a
+                        href={entry.setupScreenshotUrl || entry.tradingViewUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-[11px] font-medium text-fatfx-teal-600 hover:text-fatfx-teal-700 bg-fatfx-teal-50 hover:bg-fatfx-teal-100 px-2.5 py-1.5 rounded-lg transition-all border border-fatfx-teal-100"
+                      >
+                        <Image className="w-3 h-3" />
+                        Setup Chart
+                      </a>
+                    )}
+
+                    {canEditDelete(entry) && (
+                      <>
+                        <button
+                          onClick={() => { setEditEntry(entry); setShowModal(true); }}
+                          className="flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-all"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          {isPublished ? 'Edit' : 'Publish / Edit'}
+                        </button>
+
+                        {isPublished ? (
+                          <button
+                            onClick={() => setPushJournalId(entry.id)}
+                            className="flex items-center gap-1 text-[11px] font-medium text-fatfx-teal-600 hover:text-fatfx-teal-700 bg-fatfx-teal-50 hover:bg-fatfx-teal-100 px-2.5 py-1.5 rounded-lg transition-all border border-fatfx-teal-100"
+                          >
+                            <Send className="w-3 h-3" />
+                            Push
+                            {entry.pushedTo && entry.pushedTo.length > 0 && (
+                              <span className="ml-0.5 text-[9px] bg-fatfx-teal-500 text-white rounded-full px-1.5">
+                                {entry.pushedTo.length}
+                              </span>
+                            )}
+                          </button>
+                        ) : (
+                          <span
+                            title="You must publish the trade outcome before pushing to other traders"
+                            className="flex items-center gap-1 text-[11px] font-medium text-slate-400 bg-slate-100 px-2.5 py-1.5 rounded-lg cursor-not-allowed"
+                          >
+                            <Send className="w-3 h-3 text-slate-300" />
+                            Publish to Push
+                          </span>
                         )}
-                      </button>
-                      <button onClick={() => handleDelete(entry.id)}
-                        className={clsx(
-                          'flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-all',
-                          deleteConfirm === entry.id ? 'bg-red-500 text-white' : 'text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100'
-                        )}>
-                        <Trash2 className="w-3 h-3" />{deleteConfirm === entry.id ? 'Confirm?' : 'Delete'}
-                      </button>
-                    </>
-                  )}
+
+                        <button
+                          onClick={() => handleDelete(entry.id)}
+                          className={clsx(
+                            'flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-all',
+                            deleteConfirm === entry.id ? 'bg-red-500 text-white' : 'text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100'
+                          )}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          {deleteConfirm === entry.id ? 'Confirm?' : 'Delete'}
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
-      <JournalModal isOpen={showModal} onClose={() => { setShowModal(false); setEditEntry(null); }} editEntry={editEntry} defaultDate={date} />
+      <JournalModal
+        isOpen={showModal}
+        onClose={() => { setShowModal(false); setEditEntry(null); }}
+        editEntry={editEntry}
+        defaultDate={date}
+      />
+
       {pushJournalId && (
-        <PushDialog journalId={pushJournalId} isOpen={!!pushJournalId} onClose={() => setPushJournalId(null)} />
+        <PushDialog
+          journalId={pushJournalId}
+          isOpen={!!pushJournalId}
+          onClose={() => setPushJournalId(null)}
+        />
       )}
     </div>
   );

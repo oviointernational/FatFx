@@ -236,7 +236,11 @@ export const SupabaseService = {
         `)
         .order('trade_date', { ascending: false });
 
-      if (error || !data) return null;
+      if (error) {
+        console.error('[SupabaseService] getJournals error:', error);
+        return null;
+      }
+      if (!data) return null;
 
       return data.map(j => ({
         id: j.id,
@@ -246,15 +250,32 @@ export const SupabaseService = {
         monthlyStartBalance: Number(j.monthly_start_balance),
         date: j.trade_date,
         time: j.trade_time || '09:00',
-        positionType: j.position_type,
-        slPips: Number(j.sl_pips),
-        result: j.result,
-        grossProfitLoss: Number(j.gross_profit_loss),
-        commissions: Number(j.commissions),
-        totalProfit: Number(j.total_profit),
-        gainPercentage: Number(j.gain_percentage),
-        tradingViewUrl: j.tradingview_url || undefined,
+        direction: (j.direction as any) || 'LONG',
+        strategy: j.strategy || '',
+        positionSize: Number(j.position_size) || 0.01,
+        entryPrice: Number(j.entry_price) || 0,
+        stopLossLevel: Number(j.stop_loss_level) || 0,
+        takeProfitLevel: Number(j.take_profit_level) || 0,
+        fees: Number(j.fees) || 0,
+        marketCondition: (j.market_condition as any) || 'TREND',
+        setupScreenshotUrl: j.setup_screenshot_url || undefined,
         notes: j.notes || undefined,
+        exitPrice: j.exit_price ? Number(j.exit_price) : undefined,
+        netPnL: j.net_pnl !== null ? Number(j.net_pnl) : undefined,
+        rMultiple: j.r_multiple ? Number(j.r_multiple) : undefined,
+        emotionalState: j.emotional_state || undefined,
+        ruleCompliance: j.rule_compliance ? Number(j.rule_compliance) : undefined,
+        mistakesMade: j.mistakes_made || undefined,
+        publishStatus: (j.publish_status as any) || 'DRAFT',
+        // Legacy fields
+        positionType: j.position_type || undefined,
+        slPips: j.sl_pips ? Number(j.sl_pips) : undefined,
+        result: j.result || undefined,
+        grossProfitLoss: j.gross_profit_loss ? Number(j.gross_profit_loss) : undefined,
+        commissions: j.commissions ? Number(j.commissions) : undefined,
+        totalProfit: j.total_profit ? Number(j.total_profit) : undefined,
+        gainPercentage: j.gain_percentage ? Number(j.gain_percentage) : undefined,
+        tradingViewUrl: j.tradingview_url || undefined,
         isPushed: j.is_pushed,
         pushedBy: j.pushed_by?.username || undefined,
         pushedTo: (j.journal_push_shares || []).map((p: any) => ({
@@ -265,7 +286,8 @@ export const SupabaseService = {
         createdAt: j.created_at,
         updatedAt: j.updated_at
       }));
-    } catch {
+    } catch (err) {
+      console.error('[SupabaseService] getJournals exception:', err);
       return null;
     }
   },
@@ -279,15 +301,19 @@ export const SupabaseService = {
         monthly_start_balance: journal.monthlyStartBalance,
         trade_date: journal.date,
         trade_time: journal.time,
-        position_type: journal.positionType,
-        sl_pips: journal.slPips,
-        result: journal.result,
-        gross_profit_loss: journal.grossProfitLoss,
-        commissions: journal.commissions,
-        total_profit: journal.totalProfit,
-        gain_percentage: journal.gainPercentage,
-        tradingview_url: journal.tradingViewUrl,
-        notes: journal.notes,
+        direction: journal.direction,
+        strategy: journal.strategy,
+        position_size: journal.positionSize,
+        entry_price: journal.entryPrice,
+        stop_loss_level: journal.stopLossLevel,
+        take_profit_level: journal.takeProfitLevel,
+        fees: journal.fees,
+        market_condition: journal.marketCondition,
+        setup_screenshot_url: journal.setupScreenshotUrl || null,
+        notes: journal.notes || null,
+        publish_status: journal.publishStatus || 'DRAFT',
+        // Legacy
+        position_type: journal.direction === 'LONG' ? 'BUY' : 'SELL',
         is_pushed: journal.isPushed || false,
       }).select().single();
 
@@ -305,15 +331,17 @@ export const SupabaseService = {
         monthlyStartBalance: Number(data.monthly_start_balance),
         date: data.trade_date,
         time: data.trade_time,
-        positionType: data.position_type,
-        slPips: Number(data.sl_pips),
-        result: data.result,
-        grossProfitLoss: Number(data.gross_profit_loss),
-        commissions: Number(data.commissions),
-        totalProfit: Number(data.total_profit),
-        gainPercentage: Number(data.gain_percentage),
-        tradingViewUrl: data.tradingview_url,
-        notes: data.notes,
+        direction: data.direction as any,
+        strategy: data.strategy || '',
+        positionSize: Number(data.position_size),
+        entryPrice: Number(data.entry_price),
+        stopLossLevel: Number(data.stop_loss_level),
+        takeProfitLevel: Number(data.take_profit_level),
+        fees: Number(data.fees),
+        marketCondition: data.market_condition as any,
+        setupScreenshotUrl: data.setup_screenshot_url || undefined,
+        notes: data.notes || undefined,
+        publishStatus: data.publish_status as any,
         isPushed: data.is_pushed,
         pushedTo: [],
         createdAt: data.created_at,
@@ -325,6 +353,40 @@ export const SupabaseService = {
     }
   },
 
+  publishJournal: async (id: string, publishData: {
+    exitPrice: number;
+    netPnL: number;
+    rMultiple: number;
+    emotionalState: string;
+    ruleCompliance: number;
+    mistakesMade?: string;
+  }): Promise<boolean> => {
+    if (!isSupabaseConfigured) return false;
+    try {
+      const { error } = await supabase.from('journals').update({
+        exit_price: publishData.exitPrice,
+        net_pnl: publishData.netPnL,
+        r_multiple: publishData.rMultiple,
+        emotional_state: publishData.emotionalState,
+        rule_compliance: publishData.ruleCompliance,
+        mistakes_made: publishData.mistakesMade || null,
+        publish_status: 'PUBLISHED',
+        // Legacy result field derived from net P&L
+        result: publishData.netPnL > 0 ? 'WIN' : publishData.netPnL < 0 ? 'LOSS' : 'BE',
+        total_profit: publishData.netPnL,
+        gross_profit_loss: publishData.netPnL,
+      }).eq('id', id);
+      if (error) {
+        console.error('[SupabaseService] publishJournal error:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('[SupabaseService] publishJournal exception:', err);
+      return false;
+    }
+  },
+
   updateJournal: async (id: string, updates: Partial<JournalEntry>): Promise<boolean> => {
     if (!isSupabaseConfigured) return false;
     try {
@@ -333,15 +395,24 @@ export const SupabaseService = {
       if (updates.monthlyStartBalance !== undefined) payload.monthly_start_balance = updates.monthlyStartBalance;
       if (updates.date !== undefined) payload.trade_date = updates.date;
       if (updates.time !== undefined) payload.trade_time = updates.time;
-      if (updates.positionType !== undefined) payload.position_type = updates.positionType;
-      if (updates.slPips !== undefined) payload.sl_pips = updates.slPips;
-      if (updates.result !== undefined) payload.result = updates.result;
-      if (updates.grossProfitLoss !== undefined) payload.gross_profit_loss = updates.grossProfitLoss;
-      if (updates.commissions !== undefined) payload.commissions = updates.commissions;
-      if (updates.totalProfit !== undefined) payload.total_profit = updates.totalProfit;
-      if (updates.gainPercentage !== undefined) payload.gain_percentage = updates.gainPercentage;
-      if (updates.tradingViewUrl !== undefined) payload.tradingview_url = updates.tradingViewUrl;
+      if (updates.direction !== undefined) payload.direction = updates.direction;
+      if (updates.strategy !== undefined) payload.strategy = updates.strategy;
+      if (updates.positionSize !== undefined) payload.position_size = updates.positionSize;
+      if (updates.entryPrice !== undefined) payload.entry_price = updates.entryPrice;
+      if (updates.stopLossLevel !== undefined) payload.stop_loss_level = updates.stopLossLevel;
+      if (updates.takeProfitLevel !== undefined) payload.take_profit_level = updates.takeProfitLevel;
+      if (updates.fees !== undefined) payload.fees = updates.fees;
+      if (updates.marketCondition !== undefined) payload.market_condition = updates.marketCondition;
+      if (updates.setupScreenshotUrl !== undefined) payload.setup_screenshot_url = updates.setupScreenshotUrl;
       if (updates.notes !== undefined) payload.notes = updates.notes;
+      if (updates.exitPrice !== undefined) payload.exit_price = updates.exitPrice;
+      if (updates.netPnL !== undefined) payload.net_pnl = updates.netPnL;
+      if (updates.rMultiple !== undefined) payload.r_multiple = updates.rMultiple;
+      if (updates.emotionalState !== undefined) payload.emotional_state = updates.emotionalState;
+      if (updates.ruleCompliance !== undefined) payload.rule_compliance = updates.ruleCompliance;
+      if (updates.mistakesMade !== undefined) payload.mistakes_made = updates.mistakesMade;
+      if (updates.publishStatus !== undefined) payload.publish_status = updates.publishStatus;
+      if (updates.pushedTo !== undefined) payload.is_pushed = (updates.pushedTo?.length ?? 0) > 0;
 
       const { error } = await supabase.from('journals').update(payload).eq('id', id);
       return !error;

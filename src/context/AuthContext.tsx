@@ -67,16 +67,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const canPublishSignals = Boolean(currentUser && currentUser.status !== 'SUSPENDED' && (currentUser.permissions?.canPublishSignals ?? true));
   const canPushJournals = Boolean(currentUser && currentUser.status !== 'SUSPENDED' && (currentUser.permissions?.canPushJournals ?? true));
 
+  // Switch user is strictly restricted to ADMIN only for troubleshooting
   const switchUser = (userId: string) => {
+    if (!isAdmin) {
+      console.warn('[AuthContext] Unauthorized switchUser attempt blocked.');
+      return;
+    }
     const found = users.find(u => u.id === userId);
     if (found) {
       setCurrentUserId(userId);
       StorageService.setCurrentUserId(userId);
       SupabaseService.createActivityLog({
-        actorUsername: found.username,
+        actorUsername: currentUser?.username || 'admin',
         action: 'ACCESS_GRANTED',
         target: found.username,
-        details: `User session switched to @${found.username}`,
+        details: `Admin switched active session to @${found.username}`,
         severity: 'INFO'
       });
     }
@@ -92,12 +97,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUsers(liveProfiles);
     }
 
-    const found = currentList.find(u => u.username.toLowerCase() === query || u.email.toLowerCase() === query);
-    if (!found) {
-      return { success: false, error: 'User account not found in database. Please register.' };
+    // Match either by username (unique) or by email
+    const matches = currentList.filter(
+      u => u.username.toLowerCase() === query || u.email.toLowerCase() === query
+    );
+
+    if (matches.length === 0) {
+      return { success: false, error: 'No account found matching this username or email.' };
     }
 
-    // Verify password against Supabase
+    // If multiple accounts share the same email, match by password or exact username
+    let found: UserProfile | undefined;
+    if (matches.length === 1) {
+      found = matches[0];
+    } else {
+      // Find matching password among the email matches
+      found = matches.find(u => (u.passwordHash || u.password) === password) || matches.find(u => u.username.toLowerCase() === query);
+    }
+
+    if (!found) {
+      return { success: false, error: 'Multiple accounts match this email. Please sign in with your exact username.' };
+    }
+
+    // Verify password
     if (found.passwordHash || found.password) {
       const expected = found.passwordHash || found.password;
       if (password && password === expected) {
@@ -105,10 +127,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         StorageService.setCurrentUserId(found.id);
         return { success: true };
       }
-      return { success: false, error: 'Invalid password. Please check your credentials.' };
+      return { success: false, error: 'Incorrect password. Please verify your credentials.' };
     }
 
-    // Direct login
+    // Direct login if no password was set
     setCurrentUserId(found.id);
     StorageService.setCurrentUserId(found.id);
     return { success: true };
@@ -123,13 +145,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '_');
     const cleanEmail = email.trim().toLowerCase();
 
-    // Verify uniqueness against live Supabase
+    if (!cleanUsername) {
+      return { success: false, error: 'Username is required.' };
+    }
+    if (!cleanEmail) {
+      return { success: false, error: 'Email is required.' };
+    }
+    if (!password || password.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters.' };
+    }
+
+    // Fetch latest profiles from Supabase to verify unique username
     const liveProfiles = await SupabaseService.getProfiles();
     const currentList = liveProfiles || users;
 
-    const existing = currentList.find(u => u.username.toLowerCase() === cleanUsername || u.email.toLowerCase() === cleanEmail);
-    if (existing) {
-      return { success: false, error: 'Username or email already registered in Supabase database.' };
+    // Check if username is taken (usernames are strictly unique, emails can have multiple accounts)
+    const existingUsername = currentList.find(u => u.username.toLowerCase() === cleanUsername);
+    if (existingUsername) {
+      return { success: false, error: `Username "@${cleanUsername}" is already taken. Please choose another username.` };
     }
 
     // First registered account in database becomes ADMIN
@@ -147,8 +180,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       totalJournalsCount: 0,
       isVerified: assignedRole === 'PRO_TRADER' || assignedRole === 'ADMIN',
       status: 'ACTIVE',
-      password: password || undefined,
-      passwordHash: password || undefined,
+      password: password,
+      passwordHash: password,
       permissions: {
         canPublishSignals: true,
         canPushJournals: true,
@@ -165,7 +198,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!createRes) {
       return {
         success: false,
-        error: 'Failed to write to Supabase database. Ensure supabase_schema.sql has been executed in Supabase SQL Editor.'
+        error: 'Failed to write account to Supabase database. Please ensure supabase_schema.sql is applied in Supabase.'
       };
     }
 
@@ -176,7 +209,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       actorUsername: cleanUsername,
       action: 'USER_CREATED',
       target: cleanUsername,
-      details: `New trader account @${cleanUsername} registered (${assignedRole}) in Supabase database.`,
+      details: `New independent trader account @${cleanUsername} registered (${assignedRole}) with email ${cleanEmail}.`,
       severity: 'INFO'
     });
 

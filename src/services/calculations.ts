@@ -24,6 +24,7 @@ export const calculateJournalMetrics = (
     let monthNetPnL = 0;
     let winCount = 0;
     let lossCount = 0;
+    let beCount = 0;
 
     const days: DayJournalSummary[] = [];
 
@@ -31,27 +32,47 @@ export const calculateJournalMetrics = (
       const dateStr = formatDateString(year, m, d);
       const dayTrades = monthEntries.filter(e => e.date === dateStr);
 
+      const publishedTrades = dayTrades.filter(e => e.publishStatus === 'PUBLISHED');
+      const draftTrades = dayTrades.filter(e => e.publishStatus !== 'PUBLISHED');
+
       let dayNetPnL = 0;
       let dayWins = 0;
       let dayLosses = 0;
       let dayBE = 0;
 
-      dayTrades.forEach(trade => {
-        dayNetPnL += trade.totalProfit;
-        if (trade.result === 'WIN') dayWins++;
-        else if (trade.result === 'LOSS') dayLosses++;
+      // Only published trades contribute to actual PnL outcome
+      publishedTrades.forEach(trade => {
+        const pnl = trade.netPnL !== undefined ? trade.netPnL : (trade.totalProfit ?? 0);
+        dayNetPnL += pnl;
+        if (pnl > 0) dayWins++;
+        else if (pnl < 0) dayLosses++;
         else dayBE++;
       });
 
       monthNetPnL += dayNetPnL;
       winCount += dayWins;
       lossCount += dayLosses;
+      beCount += dayBE;
 
+      let publishStatus: 'NONE' | 'DRAFT' | 'PUBLISHED' = 'NONE';
       let status: 'NONE' | 'WIN' | 'LOSS' | 'BE' = 'NONE';
-      if (dayTrades.length > 0) {
-        if (dayNetPnL > 0) status = 'WIN';
-        else if (dayNetPnL < 0) status = 'LOSS';
-        else status = 'BE';
+
+      if (dayTrades.length === 0) {
+        publishStatus = 'NONE';
+        status = 'NONE';
+      } else if (publishedTrades.length > 0) {
+        publishStatus = 'PUBLISHED';
+        if (dayNetPnL > 0) {
+          status = 'WIN';
+        } else if (dayNetPnL < 0) {
+          status = 'LOSS';
+        } else {
+          status = 'BE';
+        }
+      } else {
+        // Only draft trades exist on this day
+        publishStatus = 'DRAFT';
+        status = 'NONE';
       }
 
       days.push({
@@ -62,6 +83,9 @@ export const calculateJournalMetrics = (
         lossTrades: dayLosses,
         beTrades: dayBE,
         netPnL: dayNetPnL,
+        publishStatus,
+        hasDraft: draftTrades.length > 0,
+        hasPublished: publishedTrades.length > 0,
         status,
         entries: dayTrades,
       });

@@ -24,6 +24,10 @@ export const PushDialog: React.FC<PushDialogProps> = ({ journalId, isOpen, onClo
   const otherUsers = users.filter(u => u.id !== currentUser.id && !alreadyPushedTo.includes(u.username));
 
   const handlePush = () => {
+    if (journal?.publishStatus !== 'PUBLISHED') {
+      setError('You must publish the trade outcome before pushing it to other traders.');
+      return;
+    }
     const trimmed = username.trim().toLowerCase();
     if (!trimmed) { setError('Enter a username'); return; }
     if (trimmed === currentUser.username.toLowerCase()) { setError("You can't push to yourself"); return; }
@@ -38,7 +42,7 @@ export const PushDialog: React.FC<PushDialogProps> = ({ journalId, isOpen, onClo
       setError('');
       setTimeout(() => { setSuccess(false); onClose(); }, 1800);
     } else {
-      setError('Failed to push. Try again.');
+      setError('Failed to push. Make sure the trade is published and try again.');
     }
   };
 

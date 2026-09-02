@@ -258,8 +258,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, isOpen
                           {jrn.result}
                         </span>
                       </div>
-                      <span className={clsx('font-bold text-xs font-mono', jrn.totalProfit >= 0 ? 'text-fatfx-win-text' : 'text-fatfx-loss-text')}>
-                        {formatSignedCurrency(jrn.totalProfit)} ({formatPercent(jrn.gainPercentage)})
+                      <span className={clsx('font-bold text-xs font-mono', (jrn.netPnL ?? jrn.totalProfit ?? 0) >= 0 ? 'text-fatfx-win-text' : 'text-fatfx-loss-text')}>
+                        {formatSignedCurrency(jrn.netPnL ?? jrn.totalProfit ?? 0)}
                       </span>
                     </div>
                     {jrn.notes && <p className="text-[11px] text-slate-600 line-clamp-2">{jrn.notes}</p>}

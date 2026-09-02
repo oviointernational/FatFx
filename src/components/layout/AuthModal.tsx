@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, User, UserPlus, LogIn, LogOut, Shield, Key, Eye, EyeOff, Lock } from 'lucide-react';
+import { X, User, UserPlus, LogIn, LogOut, Shield, Eye, EyeOff, Lock, Mail, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import clsx from 'clsx';
 
@@ -8,10 +8,10 @@ interface AuthModalProps {
   onClose: () => void;
 }
 
-type Tab = 'profile' | 'login' | 'register' | 'switch';
+type Tab = 'profile' | 'login' | 'register';
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
-  const { currentUser, users, login, register, logout, switchUser, isAdmin } = useAuth();
+  const { currentUser, login, register, logout, isAdmin } = useAuth();
   const [tab, setTab] = useState<Tab>(currentUser ? 'profile' : 'login');
 
   // Login form states
@@ -96,34 +96,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         setRegConfirmPassword('');
       }, 1500);
     } else {
-      setRegError(res.error || 'Username or email already exists.');
+      setRegError(res.error || 'Registration failed.');
     }
   };
 
-  const handleSwitch = (userId: string) => {
-    switchUser(userId);
-    onClose();
-  };
-
-  const availableTabs: Tab[] = currentUser
-    ? ['profile', 'switch', 'register']
-    : ['login', 'register'];
-
-  const tabLabel = (t: Tab) => {
-    if (t === 'switch') return 'Accounts';
-    if (t === 'login') return 'Sign In';
-    if (t === 'register') return 'Register';
-    return 'Profile';
+  const handleLogout = () => {
+    logout();
+    setTab('login');
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-end">
+    <div className="fixed inset-0 z-[100] flex items-start justify-end p-2 sm:p-4">
       <div className="absolute inset-0 bg-black/20 backdrop-blur-xs" onClick={onClose} />
-      <div className="relative mt-10 mr-2 w-88 max-w-[calc(100vw-1rem)] bg-white rounded-2xl shadow-lg border border-fatfx-border overflow-hidden">
+      <div className="relative mt-12 w-88 max-w-[calc(100vw-1rem)] bg-white rounded-2xl shadow-xl border border-fatfx-border overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-fatfx-border bg-fatfx-surface-subtle">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full overflow-hidden ring-1 ring-fatfx-teal-200 bg-fatfx-teal-50 flex items-center justify-center">
+        <div className="flex items-center justify-between px-4 py-3.5 border-b border-fatfx-border bg-fatfx-surface-subtle">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-full overflow-hidden ring-2 ring-fatfx-teal-200 bg-fatfx-teal-50 flex items-center justify-center">
               {currentUser?.avatarUrl ? (
                 <img src={currentUser.avatarUrl} alt={currentUser.fullName} className="w-full h-full object-cover" />
               ) : (
@@ -138,249 +128,314 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 </>
               ) : (
                 <>
-                  <p className="text-sm font-bold text-slate-900">Welcome to FatFx</p>
-                  <p className="text-xs text-slate-500">Sign in to your trading account</p>
+                  <p className="text-sm font-bold text-slate-900">FatFx Trader</p>
+                  <p className="text-xs text-slate-500">Sign in to your private account</p>
                 </>
               )}
             </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-100 transition-colors">
-            <X className="w-4 h-4 text-slate-400" />
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-200/60 text-slate-400 hover:text-slate-600 transition-colors">
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Tabs */}
         <div className="flex border-b border-fatfx-border bg-white">
-          {availableTabs.map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={clsx(
-                'flex-1 py-2 text-xs font-semibold transition-colors',
-                tab === t
-                  ? 'text-fatfx-teal-700 border-b-2 border-fatfx-teal-600 bg-fatfx-teal-50/70'
-                  : 'text-slate-500 hover:text-slate-800'
-              )}
-            >
-              {tabLabel(t)}
-            </button>
-          ))}
+          {currentUser ? (
+            <>
+              <button
+                onClick={() => setTab('profile')}
+                className={clsx(
+                  'flex-1 py-2.5 text-xs font-semibold transition-colors',
+                  tab === 'profile'
+                    ? 'text-fatfx-teal-600 border-b-2 border-fatfx-teal-500 bg-fatfx-teal-50/50'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                My Account
+              </button>
+              <button
+                onClick={() => setTab('login')}
+                className={clsx(
+                  'flex-1 py-2.5 text-xs font-semibold transition-colors',
+                  tab === 'login'
+                    ? 'text-fatfx-teal-600 border-b-2 border-fatfx-teal-500 bg-fatfx-teal-50/50'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                Switch / Sign In
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setTab('login')}
+                className={clsx(
+                  'flex-1 py-2.5 text-xs font-semibold transition-colors',
+                  tab === 'login'
+                    ? 'text-fatfx-teal-600 border-b-2 border-fatfx-teal-500 bg-fatfx-teal-50/50'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                Sign In
+              </button>
+              <button
+                onClick={() => setTab('register')}
+                className={clsx(
+                  'flex-1 py-2.5 text-xs font-semibold transition-colors',
+                  tab === 'register'
+                    ? 'text-fatfx-teal-600 border-b-2 border-fatfx-teal-500 bg-fatfx-teal-50/50'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                Register
+              </button>
+            </>
+          )}
         </div>
 
-        <div className="p-4 max-h-[80vh] overflow-y-auto">
-          {/* Profile Tab */}
+        {/* Tab Content */}
+        <div className="p-4">
+          
+          {/* PROFILE TAB (Private details only) */}
           {tab === 'profile' && currentUser && (
-            <div className="space-y-3">
-              <div className="bg-fatfx-surface-subtle rounded-xl p-3 border border-fatfx-border space-y-1.5 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-500 font-medium">Role</span>
-                  <span className={clsx('font-bold', currentUser.role === 'ADMIN' ? 'text-amber-600' : currentUser.role === 'PRO_TRADER' ? 'text-fatfx-teal-600' : 'text-slate-700')}>
-                    {currentUser.role.replace('_', ' ')}
+            <div className="space-y-4">
+              <div className="bg-fatfx-surface-subtle rounded-xl p-3 border border-fatfx-border space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Account Type</span>
+                  <span className={clsx(
+                    'font-bold px-2 py-0.5 rounded-full text-[10px]',
+                    currentUser.role === 'ADMIN' ? 'bg-amber-100 text-amber-700'
+                      : currentUser.role === 'PRO_TRADER' ? 'bg-fatfx-teal-100 text-fatfx-teal-700'
+                      : 'bg-slate-200 text-slate-700'
+                  )}>
+                    {currentUser.role === 'PRO_TRADER' ? 'Pro Trader' : currentUser.role}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500 font-medium">Joined</span>
-                  <span className="text-slate-700 font-semibold">{currentUser.joinedDate}</span>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Email</span>
+                  <span className="text-slate-800 font-medium font-mono">{currentUser.email}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500 font-medium">Status</span>
-                  <span className="text-green-600 font-bold">{currentUser.status}</span>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Joined</span>
+                  <span className="text-slate-800 font-medium">{currentUser.joinedDate}</span>
                 </div>
+
+                {currentUser.winRate !== undefined && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Win Rate</span>
+                    <span className="text-fatfx-win-text font-bold">{currentUser.winRate}%</span>
+                  </div>
+                )}
               </div>
 
               {currentUser.bio && (
-                <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2.5 rounded-lg">{currentUser.bio}</p>
+                <p className="text-xs text-slate-500 leading-relaxed italic bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                  "{currentUser.bio}"
+                </p>
               )}
 
-              <button
-                onClick={() => {
-                  logout();
-                  setTab('login');
-                }}
-                className="w-full py-2 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-1.5"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                Sign Out
-              </button>
+              <div className="pt-2 border-t border-fatfx-border flex gap-2">
+                <button
+                  onClick={handleLogout}
+                  className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-2 border border-red-200"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Sign Out
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Login Tab */}
+          {/* LOGIN TAB */}
           {tab === 'login' && (
-            <div className="space-y-3">
-              <p className="text-xs text-slate-500">Sign in with your credentials.</p>
+            <div className="space-y-3.5">
+              <p className="text-xs text-slate-500">
+                Sign in with your username or email and password.
+              </p>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                   Username or Email
                 </label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Enter username or email"
+                    placeholder="e.g. trader_john or john@example.com"
                     value={loginInput}
                     onChange={e => { setLoginInput(e.target.value); setLoginError(''); }}
-                    className="w-full pl-8.5 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                    onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                    className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-fatfx-border focus:outline-none focus:ring-2 focus:ring-fatfx-teal-400"
                     autoFocus
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                   Password
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type={showLoginPassword ? 'text' : 'password'}
-                    placeholder="Enter your password"
+                    placeholder="Enter password"
                     value={loginPassword}
                     onChange={e => { setLoginPassword(e.target.value); setLoginError(''); }}
                     onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                    className="w-full pl-8.5 pr-9 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                    className="w-full pl-9 pr-10 py-2 text-sm rounded-xl border border-fatfx-border focus:outline-none focus:ring-2 focus:ring-fatfx-teal-400"
                   />
                   <button
                     type="button"
                     onClick={() => setShowLoginPassword(!showLoginPassword)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   >
-                    {showLoginPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
 
-              {loginError && <p className="text-xs text-red-500 font-medium">{loginError}</p>}
+              {loginError && (
+                <p className="text-xs text-red-500 font-medium bg-red-50 p-2 rounded-lg border border-red-200">
+                  {loginError}
+                </p>
+              )}
 
               <button
                 onClick={handleLogin}
                 disabled={isSubmitting}
-                className="w-full py-2.5 bg-fatfx-teal-600 hover:bg-fatfx-teal-700 text-white text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                className="w-full py-2.5 bg-fatfx-teal-500 text-white text-xs font-bold rounded-xl hover:bg-fatfx-teal-600 transition-all flex items-center justify-center gap-2 shadow-glow-teal disabled:opacity-50"
               >
-                <LogIn className="w-3.5 h-3.5" />
-                {isSubmitting ? 'Signing In...' : 'Sign In'}
+                <LogIn className="w-4 h-4" />
+                {isSubmitting ? 'Signing in...' : 'Sign In'}
               </button>
 
-              <div className="text-center pt-2">
-                <span className="text-xs text-slate-500">Don't have an account? </span>
+              <div className="pt-2 text-center">
                 <button
-                  type="button"
                   onClick={() => setTab('register')}
-                  className="text-xs font-bold text-fatfx-teal-600 hover:underline"
+                  className="text-xs text-fatfx-teal-600 hover:underline font-semibold"
                 >
-                  Create one now
+                  Need an account? Create one here →
                 </button>
               </div>
             </div>
           )}
 
-          {/* Register Tab */}
+          {/* REGISTER TAB */}
           {tab === 'register' && (
             <div className="space-y-3">
               {regSuccess ? (
-                <div className="text-center py-4">
-                  <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
-                    <UserPlus className="w-5 h-5 text-green-600" />
+                <div className="text-center py-6">
+                  <div className="w-12 h-12 rounded-full bg-fatfx-win-bg flex items-center justify-center mx-auto mb-2.5">
+                    <UserPlus className="w-6 h-6 text-fatfx-win-text" />
                   </div>
                   <p className="text-sm font-bold text-slate-900">Account Created!</p>
-                  <p className="text-xs text-slate-500 mt-1">Welcome to FatFx</p>
+                  <p className="text-xs text-slate-500 mt-1">Logged into your new private account.</p>
                 </div>
               ) : (
                 <>
+                  <p className="text-xs text-slate-500">
+                    Create a new trading account. (You can use the same email with different usernames).
+                  </p>
+
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
-                      Username *
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      Unique Username *
                     </label>
                     <input
                       type="text"
-                      placeholder="Choose a username"
+                      placeholder="e.g. sniper_fx"
                       value={regUsername}
                       onChange={e => { setRegUsername(e.target.value); setRegError(''); }}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                      className="w-full px-3 py-2 text-sm rounded-xl border border-fatfx-border focus:outline-none focus:ring-2 focus:ring-fatfx-teal-400"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
-                      Full Name (optional)
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      Full Name (Optional)
                     </label>
                     <input
                       type="text"
-                      placeholder="Your display name"
+                      placeholder="e.g. John Doe"
                       value={regFullName}
                       onChange={e => setRegFullName(e.target.value)}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                      className="w-full px-3 py-2 text-sm rounded-xl border border-fatfx-border focus:outline-none focus:ring-2 focus:ring-fatfx-teal-400"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                       Email Address *
                     </label>
                     <input
                       type="email"
-                      placeholder="trader@domain.com"
+                      placeholder="john@example.com"
                       value={regEmail}
                       onChange={e => { setRegEmail(e.target.value); setRegError(''); }}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                      className="w-full px-3 py-2 text-sm rounded-xl border border-fatfx-border focus:outline-none focus:ring-2 focus:ring-fatfx-teal-400"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
-                      Password *
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      Password (min 6 characters) *
                     </label>
                     <div className="relative">
                       <input
                         type={showRegPassword ? 'text' : 'password'}
-                        placeholder="Min 6 characters"
+                        placeholder="Create strong password"
                         value={regPassword}
                         onChange={e => { setRegPassword(e.target.value); setRegError(''); }}
-                        className="w-full px-3 pr-9 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                        className="w-full px-3 pr-10 py-2 text-sm rounded-xl border border-fatfx-border focus:outline-none focus:ring-2 focus:ring-fatfx-teal-400"
                       />
                       <button
                         type="button"
                         onClick={() => setShowRegPassword(!showRegPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                       >
-                        {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                       Confirm Password *
                     </label>
                     <input
                       type={showRegPassword ? 'text' : 'password'}
-                      placeholder="Repeat your password"
+                      placeholder="Repeat password"
                       value={regConfirmPassword}
                       onChange={e => { setRegConfirmPassword(e.target.value); setRegError(''); }}
-                      onKeyDown={e => e.key === 'Enter' && handleRegister()}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-fatfx-teal-500"
+                      className="w-full px-3 py-2 text-sm rounded-xl border border-fatfx-border focus:outline-none focus:ring-2 focus:ring-fatfx-teal-400"
                     />
                   </div>
 
-                  {regError && <p className="text-xs text-red-500 font-medium">{regError}</p>}
+                  {regError && (
+                    <p className="text-xs text-red-500 font-medium bg-red-50 p-2 rounded-lg border border-red-200">
+                      {regError}
+                    </p>
+                  )}
 
                   <button
                     onClick={handleRegister}
                     disabled={isSubmitting}
-                    className="w-full py-2.5 bg-fatfx-teal-600 hover:bg-fatfx-teal-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs"
+                    className="w-full py-2.5 bg-fatfx-teal-500 text-white text-xs font-bold rounded-xl hover:bg-fatfx-teal-600 transition-all flex items-center justify-center gap-2 shadow-glow-teal disabled:opacity-50"
                   >
-                    {isSubmitting ? 'Creating Account...' : 'Create Account'}
+                    <UserPlus className="w-4 h-4" />
+                    {isSubmitting ? 'Creating account...' : 'Create Account'}
                   </button>
 
-                  <div className="text-center pt-1">
-                    <span className="text-xs text-slate-500">Already registered? </span>
+                  <div className="pt-1 text-center">
                     <button
-                      type="button"
                       onClick={() => setTab('login')}
-                      className="text-xs font-bold text-fatfx-teal-600 hover:underline"
+                      className="text-xs text-slate-500 hover:text-slate-800"
                     >
-                      Sign In
+                      Already have an account? <span className="text-fatfx-teal-600 font-semibold">Sign in</span>
                     </button>
                   </div>
                 </>
@@ -388,40 +443,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             </div>
           )}
 
-          {/* Switch Accounts Tab */}
-          {tab === 'switch' && (
-            <div className="space-y-1.5 max-h-64 overflow-y-auto">
-              {users.map(u => (
-                <button
-                  key={u.id}
-                  onClick={() => handleSwitch(u.id)}
-                  className={clsx(
-                    'w-full flex items-center gap-3 p-2 rounded-xl transition-all text-left border',
-                    u.id === currentUser?.id
-                      ? 'bg-fatfx-teal-50 border-fatfx-teal-200'
-                      : 'hover:bg-slate-50 border-transparent'
-                  )}
-                >
-                  <div className="w-8 h-8 rounded-full overflow-hidden ring-1 ring-slate-200 shrink-0">
-                    {u.avatarUrl ? (
-                      <img src={u.avatarUrl} alt={u.fullName} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full bg-fatfx-teal-100 flex items-center justify-center font-bold text-xs text-fatfx-teal-700">
-                        {u.username.substring(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-slate-900 truncate">{u.fullName}</p>
-                    <p className="text-[10px] text-slate-500">@{u.username} • {u.role}</p>
-                  </div>
-                  {u.id === currentUser?.id && (
-                    <span className="text-[9px] text-fatfx-teal-700 font-bold bg-fatfx-teal-100 px-1.5 py-0.5 rounded-full">Active</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </div>

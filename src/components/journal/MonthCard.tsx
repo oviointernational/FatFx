@@ -38,7 +38,11 @@ export const MonthCard: React.FC<MonthCardProps> = ({ summary, year, onDayClick 
           <span className="text-xs font-bold text-slate-900 tracking-tight">{summary.monthName}</span>
           <div className={clsx(
             'text-xs font-bold font-mono px-1.5 py-0.5 rounded-lg border-none',
-            pnlPositive ? 'text-fatfx-win-text bg-fatfx-win-bg' : 'text-fatfx-loss-text bg-fatfx-loss-bg'
+            summary.totalTrades > 0
+              ? pnlPositive
+                ? 'text-fatfx-win-text bg-fatfx-win-bg'
+                : 'text-fatfx-loss-text bg-fatfx-loss-bg'
+              : 'text-slate-400 bg-transparent'
           )}>
             {summary.totalTrades > 0 ? formatSignedCurrency(summary.netPnL) : '—'}
           </div>
@@ -91,7 +95,7 @@ export const MonthCard: React.FC<MonthCardProps> = ({ summary, year, onDayClick 
           ))}
         </div>
 
-        {/* Day boxes with clean spacing (gap-1.5) and borderless green/red boxes */}
+        {/* Day boxes: transparent if no journal, grey if draft only, green if published win, red if published loss */}
         <div className="grid grid-cols-7 gap-1.5">
           {/* Blank cells for starting offset */}
           {Array.from({ length: firstDayOfWeek }).map((_, i) => (
@@ -99,30 +103,38 @@ export const MonthCard: React.FC<MonthCardProps> = ({ summary, year, onDayClick 
           ))}
 
           {summary.days.map(day => {
-            const status = day.totalTrades === 0 ? 'NONE' : day.status;
+            const hasEntries = day.totalTrades > 0;
+            const isPublished = day.publishStatus === 'PUBLISHED';
+            const isDraftOnly = day.publishStatus === 'DRAFT';
+
+            let cellStyle = 'bg-transparent text-slate-400 hover:text-slate-700 hover:bg-fatfx-surface-subtle';
+            if (isDraftOnly) {
+              cellStyle = 'bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300 shadow-sm';
+            } else if (isPublished) {
+              if (day.netPnL > 0) {
+                cellStyle = 'bg-fatfx-win-bg text-fatfx-win-text font-bold hover:opacity-90 hover:scale-105 shadow-sm';
+              } else {
+                cellStyle = 'bg-fatfx-loss-bg text-fatfx-loss-text font-bold hover:opacity-90 hover:scale-105 shadow-sm';
+              }
+            }
+
             return (
               <button
                 key={day.dayNumber}
                 onClick={() => onDayClick(day.date, day)}
                 title={
-                  day.totalTrades > 0
-                    ? `${day.totalTrades} trade(s) — PnL: ${formatSignedCurrency(day.netPnL)}`
+                  hasEntries
+                    ? `${day.totalTrades} trade(s) — ${isPublished ? `PnL: ${formatSignedCurrency(day.netPnL)} (Published)` : 'Draft (Unpublished)'}`
                     : day.date
                 }
                 className={clsx(
                   'aspect-square flex items-center justify-center text-[11px] font-semibold rounded-lg transition-all duration-150 relative border-none',
-                  status === 'NONE'
-                    ? 'text-slate-400 hover:text-slate-700 hover:bg-fatfx-surface-subtle bg-transparent'
-                    : status === 'WIN'
-                    ? 'bg-fatfx-win-bg text-fatfx-win-text hover:opacity-90 hover:scale-105'
-                    : status === 'LOSS'
-                    ? 'bg-fatfx-loss-bg text-fatfx-loss-text hover:opacity-90 hover:scale-105'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  cellStyle
                 )}
               >
                 {day.dayNumber}
                 {day.totalTrades > 1 && (
-                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-fatfx-teal-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-fatfx-teal-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center shadow-sm">
                     {day.totalTrades}
                   </span>
                 )}

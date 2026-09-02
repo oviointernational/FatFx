@@ -711,10 +711,10 @@ export const AdminDashboard: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-3 text-xs text-slate-700 mt-1 font-mono font-medium">
-                      <span>Gross: {formatSignedCurrency(jrn.grossProfitLoss)}</span>
-                      <span>Comm: -${jrn.commissions.toFixed(2)}</span>
-                      <span>Net: <strong className={jrn.totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}>{formatSignedCurrency(jrn.totalProfit)} ({formatPercent(jrn.gainPercentage)})</strong></span>
-                      <span>SL: {jrn.slPips} pips</span>
+                      <span>Direction: {jrn.direction || jrn.positionType || 'LONG'}</span>
+                      <span>Fees: -${(jrn.fees || jrn.commissions || 0).toFixed(2)}</span>
+                      <span>Net: <strong className={(jrn.netPnL ?? jrn.totalProfit ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}>{formatSignedCurrency(jrn.netPnL ?? jrn.totalProfit ?? 0)}</strong></span>
+                      {jrn.rMultiple && <span>R: {jrn.rMultiple}R</span>}
                     </div>
 
                     {jrn.notes && <p className="text-[11px] text-slate-500 mt-1">{jrn.notes}</p>}

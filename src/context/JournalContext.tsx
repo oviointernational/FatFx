@@ -1,7 +1,16 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { JournalEntry, MonthCapitalConfig } from '../types/journal';
+import { JournalEntry, MonthCapitalConfig, PublishStatus, EmotionalState } from '../types/journal';
 import { SupabaseService } from '../services/supabaseService';
 import { useAuth } from './AuthContext';
+
+interface PublishPayload {
+  exitPrice: number;
+  netPnL: number;
+  rMultiple: number;
+  emotionalState: EmotionalState;
+  ruleCompliance: number;
+  mistakesMade?: string;
+}
 
 interface JournalContextType {
   journals: JournalEntry[];
@@ -9,6 +18,7 @@ interface JournalContextType {
   addJournal: (entry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>) => Promise<JournalEntry>;
   updateJournal: (id: string, updates: Partial<JournalEntry>) => void;
   deleteJournal: (id: string) => void;
+  publishJournal: (id: string, payload: PublishPayload) => Promise<boolean>;
   pushJournal: (journalId: string, targetUsername: string) => boolean;
   updateCapital: (year: number, month: number, capital: number) => void;
   getMyJournals: () => JournalEntry[];
@@ -45,11 +55,13 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => { mounted = false; };
   }, [currentUser?.id]);
 
+  // Only show current user's own journals (account isolation)
   const getMyJournals = (): JournalEntry[] => {
     if (!currentUser) return [];
     return journals.filter(j => j.userId === currentUser.id && !j.isPushed);
   };
 
+  // Journals pushed TO the current user
   const getPushedJournals = (): JournalEntry[] => {
     if (!currentUser) return [];
     return journals.filter(j =>
@@ -63,7 +75,6 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setJournals(prev => [remoteEntry, ...prev]);
       return remoteEntry;
     }
-    // Fallback temp entry if Supabase failed
     const fallback: JournalEntry = {
       ...entry,
       id: `jrn_temp_${Date.now()}`,
@@ -85,10 +96,27 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     SupabaseService.deleteJournal(id);
   };
 
+  const publishJournal = async (id: string, payload: PublishPayload): Promise<boolean> => {
+    const ok = await SupabaseService.publishJournal(id, payload);
+    if (ok) {
+      setJournals(prev => prev.map(j => j.id === id ? {
+        ...j,
+        ...payload,
+        publishStatus: 'PUBLISHED' as PublishStatus,
+        result: payload.netPnL > 0 ? 'WIN' : payload.netPnL < 0 ? 'LOSS' : 'BE',
+        updatedAt: new Date().toISOString(),
+      } : j));
+    }
+    return ok;
+  };
+
   const pushJournal = (journalId: string, targetUsername: string): boolean => {
     if (!currentUser) return false;
     const journal = journals.find(j => j.id === journalId);
     if (!journal) return false;
+
+    // Must be published before pushing
+    if (journal.publishStatus !== 'PUBLISHED') return false;
 
     const targetUser = users.find(u => u.username.toLowerCase() === targetUsername.toLowerCase());
     if (!targetUser) return false;
@@ -127,6 +155,7 @@ export const JournalProvider: React.FC<{ children: React.ReactNode }> = ({ child
         addJournal,
         updateJournal,
         deleteJournal,
+        publishJournal,
         pushJournal,
         updateCapital,
         getMyJournals,
